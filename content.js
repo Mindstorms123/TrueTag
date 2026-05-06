@@ -272,4 +272,6 @@ class TrueTagContentScript {
 
 // Initialize the content script
 const trueTag = new TrueTagContentScript();
-trueTag.init();
+trueTag.init().catch((error) => {
+  console.error('TrueTag: Content script init failed', error);
+});

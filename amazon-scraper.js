@@ -190,8 +190,11 @@ class AmazonScraper {
    * @returns {boolean}
    */
   static isAmazonProductPage() {
-    const url = window.location.href;
-    return /amazon\.com\/(dp|gp\/product)\/[A-Z0-9]{10}/.test(url);
+    const host = window.location.hostname;
+    const path = window.location.pathname;
+    const isAmazonHost = host === 'www.amazon.com' || host === 'www.amazon.de';
+    const hasProductPath = /\/(?:.*\/)?(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(path);
+    return isAmazonHost && hasProductPath;
   }
 }
 

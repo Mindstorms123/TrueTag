@@ -9,6 +9,7 @@
   ],
   "host_permissions": [
     "*://www.amazon.com/*",
+    "*://www.amazon.de/*",
     "*://www.bestbuy.com/*",
     "*://www.newegg.com/*",
     "*://www.target.com/*",
@@ -19,7 +20,13 @@
     {
       "matches": [
         "*://www.amazon.com/dp/*",
-        "*://www.amazon.com/gp/product/*"
+        "*://www.amazon.com/*/dp/*",
+        "*://www.amazon.com/gp/product/*",
+        "*://www.amazon.com/*/gp/product/*",
+        "*://www.amazon.de/dp/*",
+        "*://www.amazon.de/*/dp/*",
+        "*://www.amazon.de/gp/product/*",
+        "*://www.amazon.de/*/gp/product/*"
       ],
       "js": [
         "content.js"
