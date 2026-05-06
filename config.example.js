@@ -51,6 +51,8 @@ const CONFIG = {
       showDelay: 500,
       animationDuration: 500,
     },
+    // Set to true only for local UI testing.
+    forceShowForTesting: false,
   },
 
   debug: false,

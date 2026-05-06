@@ -251,7 +251,25 @@ class OverlayUI {
     const savings = Math.max(0, (uiData.amazonPrice || 0) - (uiData.bestPrice?.price || 0));
     const badgeText = uiData.priceHistory?.isGoodDeal
       ? `Great Deal: ${uiData.priceHistory.dealDescription || 'below 30-day average'}`
-      : 'Price history available';
+      : 'Price History Available';
+    const dealUrl = uiData.bestPrice?.url || '';
+    const isBestCurrentPrice = !!uiData.isBestCurrentPrice;
+    const dealButtonMarkup = !isBestCurrentPrice
+      ? `
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <a
+          href="${dealUrl}"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="${dealUrl
+            ? 'display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:9px;background:#10b981;color:#062b1c;text-decoration:none;font-weight:700;font-size:12px;'
+            : 'display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:9px;background:#334155;color:#94a3b8;text-decoration:none;font-weight:700;font-size:12px;pointer-events:none;'}"
+        >
+          ${dealUrl ? 'View Deal' : 'No Link Available'}
+        </a>
+      </div>
+    `
+      : '';
 
     overlay.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -262,13 +280,18 @@ class OverlayUI {
         <button id="truetag-close" style="background:transparent;border:0;color:#cbd5e1;font-size:18px;cursor:pointer;">×</button>
       </div>
       <div style="margin-top:12px;padding:12px;border:1px solid #065f46;border-radius:10px;background:linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.05));">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;">Best Alternative Price</div>
-        <div style="margin-top:4px;font-size:15px;">Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}</div>
-        ${savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;">${isBestCurrentPrice ? 'Current Best Price' : 'Best Alternative Price'}</div>
+        <div style="margin-top:4px;font-size:15px;">
+          ${isBestCurrentPrice
+            ? 'You currently have the best price on Amazon.'
+            : `Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}`}
+        </div>
+        ${!isBestCurrentPrice && savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
       </div>
       <div style="margin-top:10px;display:inline-block;padding:7px 10px;border-radius:999px;border:1px solid #14532d;background:rgba(22,163,74,.12);color:#bbf7d0;font-size:12px;font-weight:600;">
         ${badgeText}
       </div>
+      ${dealButtonMarkup}
     `;
 
     overlay.querySelector('#truetag-close')?.addEventListener('click', () => overlay.remove());
@@ -417,16 +440,35 @@ class TrueTagContentScript {
       if (!Number.isFinite(price)) continue;
 
       if (!bestPrice || price < bestPrice.price) {
-        bestPrice = { store: priceData.store, price };
+        bestPrice = { store: priceData.store, price, url: priceData.url || '' };
         bestPriceDifference = (this.productData.price || 0) - price;
       }
     }
 
     const hasHistory = (this.priceHistory?.records?.length || 0) >= this.config.priceHistory.minDataPoints;
     const hasSavings = !!bestPrice && bestPriceDifference >= 10;
+    let isBestCurrentPrice = false;
 
-    if (!hasHistory && !hasSavings) {
-      return null;
+    if (!bestPrice && this.config.ui?.forceShowForTesting) {
+      const syntheticPrice = Math.max(0, (this.productData.price || 0) - 25);
+      bestPrice = {
+        store: 'Best Buy (test mode)',
+        price: syntheticPrice,
+        url: `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(
+          this.productData.modelNumber || this.productData.title || ''
+        )}`,
+      };
+      bestPriceDifference = (this.productData.price || 0) - syntheticPrice;
+    }
+
+    if (!hasSavings && !this.config.ui?.forceShowForTesting) {
+      isBestCurrentPrice = true;
+      bestPrice = {
+        store: 'Amazon',
+        price: this.productData.price,
+        url: this.productData.currentUrl,
+      };
+      bestPriceDifference = 0;
     }
 
     let isGoodDeal = false;
@@ -443,6 +485,7 @@ class TrueTagContentScript {
 
     return {
       bestPrice,
+      isBestCurrentPrice,
       amazonPrice: this.productData.price,
       savings: bestPriceDifference,
       priceHistory: {
