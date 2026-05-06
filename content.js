@@ -448,6 +448,7 @@ class TrueTagContentScript {
     const expectedCheckedStoreCount = Object.keys(this.competitorPrices || {}).length || 4;
 
     for (const priceData of Object.values(this.competitorPrices || {})) {
+      if (priceData?.verified !== true) continue;
       if (!priceData?.price) continue;
       const price = Number.parseFloat(priceData.price);
       if (!Number.isFinite(price)) continue;

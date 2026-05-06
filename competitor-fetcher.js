@@ -76,6 +76,113 @@ class CompetitorFetcher {
     return fallbackUrl;
   }
 
+  static extractFirstPriceByPatterns(html, patterns) {
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (!match?.[1]) {
+        continue;
+      }
+
+      const normalized = String(match[1]).replace(/,/g, '');
+      const price = this.parsePriceValue(normalized);
+      if (price !== null) {
+        return price;
+      }
+    }
+
+    return null;
+  }
+
+  static extractJsonLdProductPrice(html) {
+    const scripts = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi) || [];
+    for (const script of scripts) {
+      const jsonText = script
+        .replace(/<script[^>]*>/i, '')
+        .replace(/<\/script>/i, '')
+        .trim();
+
+      try {
+        const parsed = JSON.parse(jsonText);
+        const nodes = Array.isArray(parsed) ? parsed : [parsed];
+
+        for (const node of nodes) {
+          const offers = node?.offers;
+          if (!offers) {
+            continue;
+          }
+
+          const offerItems = Array.isArray(offers) ? offers : [offers];
+          for (const offer of offerItems) {
+            const price = this.parsePriceValue(offer?.price);
+            if (price !== null) {
+              return price;
+            }
+          }
+        }
+      } catch {
+        // Ignore non-JSON-LD script payloads.
+      }
+    }
+
+    return null;
+  }
+
+  static normalizeStoreUrl(baseUrl, pathOrUrl) {
+    if (!pathOrUrl) {
+      return null;
+    }
+
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return pathOrUrl;
+    }
+
+    if (pathOrUrl.startsWith('/')) {
+      return `${baseUrl}${pathOrUrl}`;
+    }
+
+    return `${baseUrl}/${pathOrUrl}`;
+  }
+
+  static extractFirstUrlByPatterns(html, baseUrl, patterns, fallbackUrl) {
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) {
+        return this.normalizeStoreUrl(baseUrl, match[1].replace(/\\u002F/g, '/'));
+      }
+    }
+
+    return fallbackUrl;
+  }
+
+  static isLikelyBlockedOrFallbackPage(html) {
+    const markers = [
+      'are you a human',
+      'verify you are a human',
+      'captcha',
+      'access denied',
+      'temporarily unavailable',
+    ];
+
+    const normalized = (html || '').toLowerCase();
+    return markers.some((marker) => normalized.includes(marker));
+  }
+
+  static isValidNeweggProductUrl(url) {
+    if (!url) {
+      return false;
+    }
+
+    if (!/^https:\/\/www\.newegg\.com\//i.test(url)) {
+      return false;
+    }
+
+    if (/\/p\/pl\b/i.test(url)) {
+      return false;
+    }
+
+    return /\/p\/[A-Z0-9-]+/i.test(url);
+  }
+
   /**
    * Fetch prices from all competitors
    * @param {string} productTitle - Product title/search term
@@ -160,6 +267,7 @@ class CompetitorFetcher {
         store: 'Best Buy',
         price: price,
         url: productUrl,
+        verified: true,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -174,17 +282,56 @@ class CompetitorFetcher {
    */
   static async fetchNeweggPrice(productTitle, modelNumber) {
     const searchQuery = modelNumber || productTitle;
-    const url = `https://www.newegg.com/p/pl?d=${encodeURIComponent(searchQuery)}`;
+    const searchUrl = `https://www.newegg.com/p/pl?d=${encodeURIComponent(searchQuery)}`;
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Newegg HTTP ${response.status}`);
+      }
+
       const html = await response.text();
-      const price = this.extractPriceFromHTML(html, 'newegg');
+      if (this.isLikelyBlockedOrFallbackPage(html)) {
+        return null;
+      }
+
+      const pricePatterns = [
+        /"finalPrice"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i,
+        /"currentPrice"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i,
+        /"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?\s*,\s*"currency"/i,
+        /\$([0-9][0-9,]*(?:\.[0-9]{2})?)<\/strong>/i,
+      ];
+
+      const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
+      if (price === null) {
+        return null;
+      }
+
+      const productUrl = this.extractFirstUrlByPatterns(
+        html,
+        'https://www.newegg.com',
+        [
+          /href="(https:\/\/www\.newegg\.com\/[^"]+\/p\/[A-Z0-9-]+)"/i,
+          /href="(\/[^"]+\/p\/[A-Z0-9-]+)"/i,
+        ],
+        null
+      );
+
+      if (!this.isValidNeweggProductUrl(productUrl)) {
+        return null;
+      }
 
       return {
         store: 'Newegg',
         price: price,
-        url: url,
+        url: productUrl,
+        verified: true,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -199,17 +346,48 @@ class CompetitorFetcher {
    */
   static async fetchTargetPrice(productTitle, modelNumber) {
     const searchQuery = modelNumber || productTitle;
-    const url = `https://www.target.com/s?searchTerm=${encodeURIComponent(searchQuery)}`;
+    const searchUrl = `https://www.target.com/s?searchTerm=${encodeURIComponent(searchQuery)}`;
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Target HTTP ${response.status}`);
+      }
+
       const html = await response.text();
-      const price = this.extractPriceFromHTML(html, 'target');
+      const pricePatterns = [
+        /"current_retail"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
+        /"formatted_current_price"\s*:\s*"\$?([0-9]+(?:\.[0-9]+)?)"/i,
+        /"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?\s*,\s*"priceCurrency"/i,
+        /\$([0-9][0-9,]*(?:\.[0-9]{2})?)<\/span>/i,
+      ];
+
+      const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
+      if (price === null) {
+        return null;
+      }
+
+      const productUrl = this.extractFirstUrlByPatterns(
+        html,
+        'https://www.target.com',
+        [
+          /href="(\/p\/[^"]+-\/A-[0-9]+)"/i,
+          /"canonical"\s*:\s*"(https:\/\/www\.target\.com\/[^"]+)"/i,
+        ],
+        searchUrl
+      );
 
       return {
         store: 'Target',
         price: price,
-        url: url,
+        url: productUrl,
+        verified: true,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -224,42 +402,56 @@ class CompetitorFetcher {
    */
   static async fetchMicroCenterPrice(productTitle, modelNumber) {
     const searchQuery = modelNumber || productTitle;
-    const url = `https://www.microcenter.com/search/search_results.aspx?searchterm=${encodeURIComponent(
+    const searchUrl = `https://www.microcenter.com/search/search_results.aspx?searchterm=${encodeURIComponent(
       searchQuery
     )}`;
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Micro Center HTTP ${response.status}`);
+      }
+
       const html = await response.text();
-      const price = this.extractPriceFromHTML(html, 'microcenter');
+      const pricePatterns = [
+        /"price"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?\s*,\s*"priceCurrency"/i,
+        /"currentPrice"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/i,
+        /data-price="([0-9]+(?:\.[0-9]+)?)"/i,
+        /\$([0-9][0-9,]*(?:\.[0-9]{2})?)<\/span>/i,
+      ];
+
+      const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
+      if (price === null) {
+        return null;
+      }
+
+      const productUrl = this.extractFirstUrlByPatterns(
+        html,
+        'https://www.microcenter.com',
+        [
+          /href="(\/product\/[0-9]+\/[^"]+)"/i,
+          /"canonical"\s*:\s*"(https:\/\/www\.microcenter\.com\/[^"]+)"/i,
+        ],
+        searchUrl
+      );
 
       return {
         store: 'Micro Center',
         price: price,
-        url: url,
+        url: productUrl,
+        verified: true,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
       console.error('Micro Center fetch failed:', error);
       return null;
     }
-  }
-
-  /**
-   * Extract price from HTML response
-   * This is a placeholder - each retailer would need specific parsing logic
-   * @private
-   */
-  static extractPriceFromHTML(html, store) {
-    // TODO: Implement specific parsing for each store
-    // This would involve:
-    // 1. Creating a temporary DOM parser
-    // 2. Querying for product price selectors specific to each store
-    // 3. Parsing and validating the price
-
-    // For now, return null as placeholder
-    console.warn(`Price extraction not yet implemented for ${store}`);
-    return null;
   }
 }
 
