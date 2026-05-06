@@ -254,6 +254,12 @@ class OverlayUI {
       : 'Price History Available';
     const dealUrl = uiData.bestPrice?.url || '';
     const isBestCurrentPrice = !!uiData.isBestCurrentPrice;
+    const isCompetitorCheckUnverified = !!uiData.isCompetitorCheckUnverified;
+    const isPriceIdentical = !!uiData.isPriceIdentical;
+    const identicalStore = uiData.identicalStore || 'another retailer';
+    const verifiedCompetitorCount = uiData.verifiedCompetitorCount || 0;
+    const expectedCheckedStoreCount = uiData.expectedCheckedStoreCount || 4;
+    const isComparisonPartial = !!uiData.isComparisonPartial;
     const dealButtonMarkup = !isBestCurrentPrice
       ? `
       <div style="margin-top:12px;display:flex;gap:8px;">
@@ -282,11 +288,16 @@ class OverlayUI {
       <div style="margin-top:12px;padding:12px;border:1px solid #065f46;border-radius:10px;background:linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.05));">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;">${isBestCurrentPrice ? 'Current Best Price' : 'Best Alternative Price'}</div>
         <div style="margin-top:4px;font-size:15px;">
-          ${isBestCurrentPrice
-            ? 'You currently have the best price on Amazon.'
+          ${isCompetitorCheckUnverified
+            ? `Current best seen: <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> on Amazon (competitor check not yet verified).`
+            : isPriceIdentical
+            ? `Best verified price is <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> (same price at ${identicalStore}).`
+            : isBestCurrentPrice
+            ? `Best verified price is <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> on Amazon.`
             : `Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}`}
         </div>
-        ${!isBestCurrentPrice && savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
+        ${!isCompetitorCheckUnverified && isComparisonPartial ? `<div style="margin-top:6px;color:#93c5fd;font-size:12px;">Verified stores: ${verifiedCompetitorCount}/${expectedCheckedStoreCount}</div>` : ''}
+        ${!isBestCurrentPrice && !isCompetitorCheckUnverified && !isPriceIdentical && savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
       </div>
       <div style="margin-top:10px;display:inline-block;padding:7px 10px;border-radius:999px;border:1px solid #14532d;background:rgba(22,163,74,.12);color:#bbf7d0;font-size:12px;font-weight:600;">
         ${badgeText}
@@ -433,11 +444,15 @@ class TrueTagContentScript {
   processDataForUI() {
     let bestPrice = null;
     let bestPriceDifference = 0;
+    let verifiedCompetitorCount = 0;
+    const expectedCheckedStoreCount = Object.keys(this.competitorPrices || {}).length || 4;
 
     for (const priceData of Object.values(this.competitorPrices || {})) {
       if (!priceData?.price) continue;
       const price = Number.parseFloat(priceData.price);
       if (!Number.isFinite(price)) continue;
+
+      verifiedCompetitorCount += 1;
 
       if (!bestPrice || price < bestPrice.price) {
         bestPrice = { store: priceData.store, price, url: priceData.url || '' };
@@ -445,9 +460,15 @@ class TrueTagContentScript {
       }
     }
 
-    const hasHistory = (this.priceHistory?.records?.length || 0) >= this.config.priceHistory.minDataPoints;
-    const hasSavings = !!bestPrice && bestPriceDifference >= 10;
+    const hasVerifiedCompetitorPrice = !!bestPrice;
+    const normalizedDelta = Math.round(bestPriceDifference * 100) / 100;
+    const hasCheaperCompetitor = !!bestPrice && normalizedDelta >= 0.01;
+    const isEqualPrice = !!bestPrice && Math.abs(normalizedDelta) < 0.01;
+    const isComparisonPartial = verifiedCompetitorCount < expectedCheckedStoreCount;
     let isBestCurrentPrice = false;
+    let isCompetitorCheckUnverified = false;
+    let isPriceIdentical = false;
+    let identicalStore = '';
 
     if (!bestPrice && this.config.ui?.forceShowForTesting) {
       const syntheticPrice = Math.max(0, (this.productData.price || 0) - 25);
@@ -461,7 +482,25 @@ class TrueTagContentScript {
       bestPriceDifference = (this.productData.price || 0) - syntheticPrice;
     }
 
-    if (!hasSavings && !this.config.ui?.forceShowForTesting) {
+    if (!hasVerifiedCompetitorPrice && !this.config.ui?.forceShowForTesting) {
+      isCompetitorCheckUnverified = true;
+      bestPrice = {
+        store: 'Unavailable',
+        price: this.productData.price,
+        url: '',
+      };
+      bestPriceDifference = 0;
+    } else if (isEqualPrice && !this.config.ui?.forceShowForTesting) {
+      isBestCurrentPrice = true;
+      isPriceIdentical = true;
+      identicalStore = bestPrice?.store || '';
+      bestPrice = {
+        store: 'Amazon',
+        price: this.productData.price,
+        url: this.productData.currentUrl,
+      };
+      bestPriceDifference = 0;
+    } else if (!hasCheaperCompetitor && !this.config.ui?.forceShowForTesting) {
       isBestCurrentPrice = true;
       bestPrice = {
         store: 'Amazon',
@@ -486,6 +525,12 @@ class TrueTagContentScript {
     return {
       bestPrice,
       isBestCurrentPrice,
+      isCompetitorCheckUnverified,
+      isPriceIdentical,
+      identicalStore,
+      verifiedCompetitorCount,
+      expectedCheckedStoreCount,
+      isComparisonPartial,
       amazonPrice: this.productData.price,
       savings: bestPriceDifference,
       priceHistory: {
