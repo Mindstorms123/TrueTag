@@ -1,0 +1,438 @@
+/* ============================================================================
+   TRUETAG - DESIGN SYSTEM & INJECTED UI STYLES
+   ============================================================================
+   
+   DESIGN PHILOSOPHY:
+   - Deep Indigo/Slate base for trustworthiness and professionalism
+   - Emerald/Mint Green accents for highlighting savings and deals
+   - Smooth animations and soft shadows for premium feel
+   - Encapsulated in Shadow DOM to prevent CSS conflicts with Amazon
+   ============================================================================ */
+
+:host {
+  --color-primary: #0f172a; /* Deep Slate */
+  --color-primary-light: #1e293b; /* Lighter Slate */
+  --color-accent: #10b981; /* Emerald Green */
+  --color-accent-light: #6ee7b7; /* Mint Green */
+  --color-accent-dark: #059669; /* Dark Emerald */
+  --color-warning: #f59e0b; /* Amber */
+  --color-text-primary: #f1f5f9; /* Near white */
+  --color-text-secondary: #cbd5e1; /* Light gray */
+  --color-bg-overlay: rgba(15, 23, 42, 0.95); /* Semi-transparent dark */
+  --color-border: #334155; /* Slate border */
+  
+  --font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Roboto", sans-serif;
+  
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================================
+   BASE OVERLAY STYLES
+   ============================================================================ */
+
+.truetag-overlay {
+  font-family: var(--font-family-base);
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--color-bg-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  z-index: 2147483647;
+  animation: slideInUp var(--transition-slow) ease-out forwards;
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================================
+   OVERLAY STRUCTURE
+   ============================================================================ */
+
+.truetag-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  gap: var(--spacing-md);
+}
+
+.truetag-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.3px;
+  text-transform: uppercase;
+}
+
+.truetag-logo-icon {
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-light) 100%);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.truetag-close {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.truetag-close:hover {
+  background: var(--color-primary-light);
+  color: var(--color-text-primary);
+}
+
+/* ============================================================================
+   CONTENT AREA
+   ============================================================================ */
+
+.truetag-content {
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* ============================================================================
+   BEST PRICE SECTION
+   ============================================================================ */
+
+.truetag-best-price {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(110, 231, 183, 0.05) 100%);
+  border: 1px solid var(--color-accent-dark);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.truetag-best-price-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-accent-light);
+  opacity: 0.9;
+}
+
+.truetag-best-price-store {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.truetag-best-price-value {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+.truetag-savings {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.truetag-savings::before {
+  content: "↓";
+  font-size: 16px;
+}
+
+/* ============================================================================
+   PRICE HISTORY SECTION
+   ============================================================================ */
+
+.truetag-price-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.truetag-history-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+}
+
+.truetag-history-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  width: fit-content;
+}
+
+.truetag-history-badge.great-deal {
+  border-color: var(--color-accent-dark);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-accent-light);
+}
+
+.truetag-history-badge.fair-deal {
+  border-color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+}
+
+.truetag-history-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+  font-size: 13px;
+}
+
+.truetag-stat {
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.truetag-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--color-text-secondary);
+}
+
+.truetag-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* ============================================================================
+   COMPETITORS SECTION
+   ============================================================================ */
+
+.truetag-competitors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.truetag-competitors-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+}
+
+.truetag-competitor-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.truetag-competitor-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.truetag-competitor-item:hover {
+  border-color: var(--color-accent);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.truetag-competitor-store {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.truetag-competitor-price {
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+/* ============================================================================
+   LOADING STATES
+   ============================================================================ */
+
+.truetag-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.truetag-skeleton-line {
+  height: 12px;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary-light) 25%,
+    var(--color-border) 50%,
+    var(--color-primary-light) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: shimmer var(--transition-slow) infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.truetag-skeleton-line.large {
+  height: 24px;
+}
+
+/* ============================================================================
+   FOOTER
+   ============================================================================ */
+
+.truetag-footer {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  font-size: 11px;
+}
+
+.truetag-footer-link {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.truetag-footer-link:hover {
+  color: var(--color-accent-light);
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
+@media (max-width: 480px) {
+  .truetag-overlay {
+    width: calc(100vw - 16px);
+    bottom: 10px;
+    right: 8px;
+    border-radius: var(--radius-md);
+  }
+
+  .truetag-history-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .truetag-best-price-value {
+    font-size: 24px;
+  }
+}
+
+/* ============================================================================
+   ACCESSIBILITY
+   ============================================================================ */
+
+.truetag-overlay:focus-within {
+  box-shadow: var(--shadow-xl), 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.truetag-close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   PRINT STYLES
+   ============================================================================ */
+
+@media print {
+  .truetag-overlay {
+    display: none;
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "TrueTag",
+  "version": "0.1.0",
+  "description": "Price comparison and price history tracker for the US tech market",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://www.amazon.com/*",
+    "*://www.bestbuy.com/*",
+    "*://www.newegg.com/*",
+    "*://www.target.com/*",
+    "*://www.microcenter.com/*",
+    "*://supabase.co/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.amazon.com/dp/*",
+        "*://www.amazon.com/gp/product/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "TrueTag - Price Tracker",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
