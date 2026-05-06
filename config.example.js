@@ -43,6 +43,8 @@ const CONFIG = {
   priceHistory: {
     averageWindow: 30,
     minDataPoints: 3,
+    minComparablePriceRatio: 0.7,
+    maxComparablePriceRatio: 1.6,
   },
 
   ui: {

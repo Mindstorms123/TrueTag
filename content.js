@@ -296,7 +296,7 @@ class OverlayUI {
             ? `Best verified price is <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> on Amazon.`
             : `Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}`}
         </div>
-        ${!isCompetitorCheckUnverified && isComparisonPartial ? `<div style="margin-top:6px;color:#93c5fd;font-size:12px;">Verified stores: ${verifiedCompetitorCount}/${expectedCheckedStoreCount}</div>` : ''}
+        ${!isCompetitorCheckUnverified && isComparisonPartial ? `<div style="margin-top:6px;color:#93c5fd;font-size:12px;">Comparable stores: ${verifiedCompetitorCount}/${expectedCheckedStoreCount}</div>` : ''}
         ${!isBestCurrentPrice && !isCompetitorCheckUnverified && !isPriceIdentical && savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
       </div>
       <div style="margin-top:10px;display:inline-block;padding:7px 10px;border-radius:999px;border:1px solid #14532d;background:rgba(22,163,74,.12);color:#bbf7d0;font-size:12px;font-weight:600;">
@@ -446,12 +446,21 @@ class TrueTagContentScript {
     let bestPriceDifference = 0;
     let verifiedCompetitorCount = 0;
     const expectedCheckedStoreCount = Object.keys(this.competitorPrices || {}).length || 4;
+    const amazonPrice = Number.parseFloat(this.productData.price || 0);
+    const minRatio = this.config.priceHistory?.minComparablePriceRatio ?? 0.7;
+    const maxRatio = this.config.priceHistory?.maxComparablePriceRatio ?? 1.6;
 
     for (const priceData of Object.values(this.competitorPrices || {})) {
       if (priceData?.verified !== true) continue;
       if (!priceData?.price) continue;
       const price = Number.parseFloat(priceData.price);
       if (!Number.isFinite(price)) continue;
+
+      const ratio = amazonPrice > 0 ? price / amazonPrice : 1;
+      if (ratio < minRatio || ratio > maxRatio) {
+        // Parsed result looks like a likely mismatch (different product/variant/accessory).
+        continue;
+      }
 
       verifiedCompetitorCount += 1;
 
