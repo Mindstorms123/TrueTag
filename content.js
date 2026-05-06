@@ -9,24 +9,51 @@
  * 5. Inject beautiful UI overlay with price comparison data
  */
 
-import AmazonScraper from './amazon-scraper.js';
-import SupabaseClient from './supabase-client.js';
-import UIBuilder from './ui-builder.js';
-import CONFIG from './config.js';
+let AmazonScraper;
+let SupabaseClient;
+let UIBuilder;
+let CONFIG;
 
 class TrueTagContentScript {
   constructor() {
-    this.supabaseClient = new SupabaseClient();
+    this.supabaseClient = null;
     this.uiBuilder = null;
     this.productData = null;
     this.priceHistory = null;
     this.competitorPrices = null;
+    this.modulesLoaded = false;
+  }
+
+  /**
+   * Dynamically load ESM modules so this file can run as a regular content script.
+   */
+  async loadModules() {
+    if (this.modulesLoaded) {
+      return;
+    }
+
+    const [amazonModule, supabaseModule, uiModule, configModule] = await Promise.all([
+      import(chrome.runtime.getURL('amazon-scraper.js')),
+      import(chrome.runtime.getURL('supabase-client.js')),
+      import(chrome.runtime.getURL('ui-builder.js')),
+      import(chrome.runtime.getURL('config.js')),
+    ]);
+
+    AmazonScraper = amazonModule.default;
+    SupabaseClient = supabaseModule.default;
+    UIBuilder = uiModule.default;
+    CONFIG = configModule.default;
+
+    this.supabaseClient = new SupabaseClient();
+    this.modulesLoaded = true;
   }
 
   /**
    * Initialize content script
    */
   async init() {
+    await this.loadModules();
+
     // Verify we're on an Amazon product page
     if (!AmazonScraper.isAmazonProductPage()) {
       console.log('Not an Amazon product page');
