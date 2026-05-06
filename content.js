@@ -1,68 +1,337 @@
 /**
- * Content Script - Runs on Amazon product pages
- * 
- * Responsibilities:
- * 1. Detect Amazon product pages
- * 2. Scrape product information (title, price, model number)
- * 3. Query Supabase for price history
- * 4. Send model number to background worker for competitor price checking
- * 5. Inject beautiful UI overlay with price comparison data
+ * TrueTag content script (classic script, no dynamic module imports)
+ * Runs on Amazon product pages and shows a non-intrusive overlay.
  */
 
-let AmazonScraper;
-let SupabaseClient;
-let UIBuilder;
-let CONFIG;
+const DEFAULT_CONFIG = {
+  supabase: {
+    url: '',
+    anonKey: '',
+    table: 'price_history',
+    writeEndpoint: '',
+  },
+  priceHistory: {
+    averageWindow: 30,
+    minDataPoints: 3,
+  },
+  ui: {
+    overlay: {
+      showDelay: 500,
+    },
+  },
+  debug: false,
+};
+
+console.info('TrueTag content.js active (build 2026-05-07.1)');
+
+class AmazonScraper {
+  static isAmazonProductPage() {
+    const host = window.location.hostname;
+    const path = window.location.pathname;
+    const isAmazonHost = host === 'www.amazon.com' || host === 'www.amazon.de';
+    const hasProductPath = /\/(?:.*\/)?(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(path);
+    return isAmazonHost && hasProductPath;
+  }
+
+  static getASIN() {
+    const urlMatch = window.location.pathname.match(/\/(?:.*\/)?(?:dp|gp\/product)\/([A-Z0-9]{10})/);
+    if (urlMatch) {
+      return urlMatch[1];
+    }
+
+    const element = document.querySelector('[data-asin]');
+    return element ? element.getAttribute('data-asin') : null;
+  }
+
+  static getProductTitle() {
+    const selectors = ['#productTitle', 'h1 span#productTitle', '[data-feature-name="title"]'];
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element?.textContent?.trim()) {
+        return element.textContent.trim();
+      }
+    }
+    return null;
+  }
+
+  static parsePriceString(priceString) {
+    if (!priceString) return null;
+
+    let value = String(priceString)
+      .replace(/[^\d,.-]/g, '')
+      .trim();
+
+    // de-DE style (765,01)
+    if (value.includes(',') && !value.includes('.')) {
+      value = value.replace(',', '.');
+    } else {
+      // en-US style (1,299.99)
+      value = value.replace(/,/g, '');
+    }
+
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 1000000) {
+      return null;
+    }
+
+    return Math.round(parsed * 100) / 100;
+  }
+
+  static getProductPrice() {
+    const offscreen = document.querySelector('.a-price .a-offscreen');
+    if (offscreen?.textContent) {
+      const price = this.parsePriceString(offscreen.textContent);
+      if (price !== null) return price;
+    }
+
+    const whole = document.querySelector('.a-price-whole')?.textContent?.trim();
+    const fraction = document.querySelector('.a-price-fraction')?.textContent?.trim();
+    if (whole) {
+      const combined = fraction ? `${whole}.${fraction}` : whole;
+      const price = this.parsePriceString(combined);
+      if (price !== null) return price;
+    }
+
+    return null;
+  }
+
+  static getModelNumber() {
+    const detailSelectors = [
+      '#detailBullets_feature_div li',
+      '#productDetails_detailBullets_sections1 tr',
+      '#technicalSpecifications_section_1 tr',
+    ];
+
+    for (const selector of detailSelectors) {
+      const rows = document.querySelectorAll(selector);
+      for (const row of rows) {
+        const text = row.textContent || '';
+        if (/model|modell|model number|modellnummer/i.test(text)) {
+          const match = text.match(/[:\-]\s*([A-Za-z0-9._-]{3,})/);
+          if (match?.[1]) {
+            return match[1];
+          }
+        }
+      }
+    }
+
+    return this.getASIN();
+  }
+
+  static scrapeProductInfo() {
+    const product = {
+      title: this.getProductTitle(),
+      price: this.getProductPrice(),
+      modelNumber: this.getModelNumber(),
+      asin: this.getASIN(),
+      currentUrl: window.location.href,
+    };
+
+    if (!product.title || !product.price || !product.modelNumber) {
+      return null;
+    }
+
+    return product;
+  }
+}
+
+class SupabaseClient {
+  constructor(config) {
+    this.config = config;
+  }
+
+  getHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      apikey: this.config.supabase.anonKey,
+      Authorization: `Bearer ${this.config.supabase.anonKey}`,
+    };
+  }
+
+  async getPriceHistory(modelNumber) {
+    if (!this.config.supabase.url || !this.config.supabase.anonKey) {
+      return [];
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - this.config.priceHistory.averageWindow);
+
+    const query = new URLSearchParams({
+      model_number: `eq.${modelNumber}`,
+      created_at: `gte.${startDate.toISOString()}`,
+      order: 'created_at.desc',
+      limit: '1000',
+    });
+
+    const response = await fetch(
+      `${this.config.supabase.url}/rest/v1/${this.config.supabase.table}?${query.toString()}`,
+      { headers: this.getHeaders() }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Supabase history fetch failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async insertPrice(priceRecord) {
+    if (!this.config.supabase.writeEndpoint || !this.config.supabase.anonKey) {
+      return null;
+    }
+
+    const payload = {
+      model_number: priceRecord.modelNumber,
+      store: priceRecord.store,
+      price: Number.parseFloat(priceRecord.price),
+      created_at: new Date().toISOString(),
+    };
+
+    const response = await fetch(this.config.supabase.writeEndpoint, {
+      method: 'POST',
+      headers: {
+        ...this.getHeaders(),
+        'x-truetag-client': 'extension',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase write failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  static calculateAveragePrice(records) {
+    if (!records?.length) return null;
+    const sum = records.reduce((acc, record) => acc + Number.parseFloat(record.price || 0), 0);
+    return sum / records.length;
+  }
+
+  static getPriceRange(records) {
+    if (!records?.length) return { min: null, max: null };
+    const prices = records.map((r) => Number.parseFloat(r.price || 0)).filter(Number.isFinite);
+    if (!prices.length) return { min: null, max: null };
+    return {
+      min: Math.min(...prices),
+      max: Math.max(...prices),
+    };
+  }
+}
+
+class OverlayUI {
+  static remove() {
+    const existing = document.getElementById('truetag-overlay');
+    if (existing) existing.remove();
+  }
+
+  static inject(uiData) {
+    this.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'truetag-overlay';
+    overlay.style.cssText = [
+      'position:fixed',
+      'right:20px',
+      'bottom:20px',
+      'z-index:2147483647',
+      'width:340px',
+      'max-width:calc(100vw - 20px)',
+      'font-family:Inter, Segoe UI, system-ui, sans-serif',
+      'background:rgba(15,23,42,0.97)',
+      'color:#f1f5f9',
+      'border:1px solid #334155',
+      'border-radius:14px',
+      'box-shadow:0 20px 35px rgba(0,0,0,0.45)',
+      'padding:14px',
+      'line-height:1.35',
+    ].join(';');
+
+    const savings = Math.max(0, (uiData.amazonPrice || 0) - (uiData.bestPrice?.price || 0));
+    const badgeText = uiData.priceHistory?.isGoodDeal
+      ? `Great Deal: ${uiData.priceHistory.dealDescription || 'below 30-day average'}`
+      : 'Price history available';
+
+    overlay.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px;">
+          <span style="display:inline-flex;width:20px;height:20px;border-radius:6px;background:#10b981;color:#082f1d;align-items:center;justify-content:center;font-size:12px;">T</span>
+          <span>TrueTag</span>
+        </div>
+        <button id="truetag-close" style="background:transparent;border:0;color:#cbd5e1;font-size:18px;cursor:pointer;">×</button>
+      </div>
+      <div style="margin-top:12px;padding:12px;border:1px solid #065f46;border-radius:10px;background:linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.05));">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;">Best Alternative Price</div>
+        <div style="margin-top:4px;font-size:15px;">Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}</div>
+        ${savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
+      </div>
+      <div style="margin-top:10px;display:inline-block;padding:7px 10px;border-radius:999px;border:1px solid #14532d;background:rgba(22,163,74,.12);color:#bbf7d0;font-size:12px;font-weight:600;">
+        ${badgeText}
+      </div>
+    `;
+
+    overlay.querySelector('#truetag-close')?.addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
+  }
+}
 
 class TrueTagContentScript {
   constructor() {
+    this.config = structuredClone(DEFAULT_CONFIG);
     this.supabaseClient = null;
-    this.uiBuilder = null;
     this.productData = null;
     this.priceHistory = null;
     this.competitorPrices = null;
-    this.modulesLoaded = false;
   }
 
-  /**
-   * Dynamically load ESM modules so this file can run as a regular content script.
-   */
-  async loadModules() {
-    if (this.modulesLoaded) {
-      return;
+  log(...args) {
+    if (this.config.debug) {
+      console.log(...args);
     }
-
-    const [amazonModule, supabaseModule, uiModule, configModule] = await Promise.all([
-      import(chrome.runtime.getURL('amazon-scraper.js')),
-      import(chrome.runtime.getURL('supabase-client.js')),
-      import(chrome.runtime.getURL('ui-builder.js')),
-      import(chrome.runtime.getURL('config.js')),
-    ]);
-
-    AmazonScraper = amazonModule.default;
-    SupabaseClient = supabaseModule.default;
-    UIBuilder = uiModule.default;
-    CONFIG = configModule.default;
-
-    this.supabaseClient = new SupabaseClient();
-    this.modulesLoaded = true;
   }
 
-  /**
-   * Initialize content script
-   */
+  async getConfigFromBackground() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'GET_PUBLIC_CONFIG' }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(response?.config || null);
+      });
+    });
+  }
+
   async init() {
-    await this.loadModules();
-
-    // Verify we're on an Amazon product page
     if (!AmazonScraper.isAmazonProductPage()) {
-      console.log('Not an Amazon product page');
       return;
     }
 
-    console.log('TrueTag: Initializing on Amazon product page');
+    const backgroundConfig = await this.getConfigFromBackground();
+    if (backgroundConfig) {
+      this.config = {
+        ...this.config,
+        ...backgroundConfig,
+        supabase: {
+          ...this.config.supabase,
+          ...(backgroundConfig.supabase || {}),
+        },
+        priceHistory: {
+          ...this.config.priceHistory,
+          ...(backgroundConfig.priceHistory || {}),
+        },
+        ui: {
+          ...this.config.ui,
+          ...(backgroundConfig.ui || {}),
+        },
+      };
+    }
 
-    // Wait for page to be fully loaded
+    this.supabaseClient = new SupabaseClient(this.config);
+
+    this.log('TrueTag: init config', this.config);
+
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.start());
     } else {
@@ -70,75 +339,54 @@ class TrueTagContentScript {
     }
   }
 
-  /**
-   * Start the price comparison process
-   * @private
-   */
   async start() {
     try {
-      // 1. Scrape product information
       this.productData = AmazonScraper.scrapeProductInfo();
       if (!this.productData) {
-        console.warn('Failed to scrape product information');
+        console.warn('TrueTag: Could not scrape required product fields.');
         return;
       }
 
-      console.log('TrueTag: Product data scraped', this.productData);
+      this.log('TrueTag: Product data', this.productData);
 
-      // 2. Fetch price history from Supabase
       await this.fetchPriceHistory();
-
-      // 3. Request competitor prices from background worker
       await this.requestCompetitorPrices();
 
-      // 4. Process and prepare data for UI
       const uiData = this.processDataForUI();
-
-      // 5. Create and inject UI
-      if (uiData) {
-        await this.injectUI(uiData);
-
-        // 6. Log the current price to Supabase
-        await this.logCurrentPrice();
+      if (!uiData) {
+        this.log('TrueTag: No overlay conditions met.');
+        return;
       }
+
+      const delay = this.config.ui?.overlay?.showDelay ?? 500;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      OverlayUI.inject(uiData);
+
+      await this.logCurrentPrice();
     } catch (error) {
-      console.error('TrueTag: Error during initialization', error);
+      console.error('TrueTag: start() failed', error);
     }
   }
 
-  /**
-   * Fetch price history from Supabase
-   * @private
-   */
   async fetchPriceHistory() {
     try {
-      const history = await this.supabaseClient.getPriceHistory(
-        this.productData.modelNumber,
-        CONFIG.priceHistory.averageWindow
-      );
-
-      if (history && history.length > 0) {
-        this.priceHistory = {
-          records: history,
-          average: this.supabaseClient.calculateAveragePrice(history),
-          range: this.supabaseClient.getPriceRange(history),
-          count: history.length,
-        };
-
-        console.log('TrueTag: Price history retrieved', this.priceHistory);
-      }
+      const records = await this.supabaseClient.getPriceHistory(this.productData.modelNumber);
+      this.priceHistory = {
+        records,
+        average: SupabaseClient.calculateAveragePrice(records),
+        range: SupabaseClient.getPriceRange(records),
+        count: records?.length || 0,
+      };
     } catch (error) {
-      console.error('TrueTag: Failed to fetch price history', error);
+      console.warn('TrueTag: Price history fetch failed', error);
+      this.priceHistory = { records: [], average: null, range: { min: null, max: null }, count: 0 };
     }
   }
 
-  /**
-   * Request competitor prices from background worker
-   * @private
-   */
   async requestCompetitorPrices() {
+    this.competitorPrices = {};
+
     return new Promise((resolve) => {
-      // Send message to background worker
       chrome.runtime.sendMessage(
         {
           type: 'FETCH_COMPETITOR_PRICES',
@@ -146,64 +394,47 @@ class TrueTagContentScript {
           modelNumber: this.productData.modelNumber,
         },
         (response) => {
-          if (response && response.competitorPrices) {
-            this.competitorPrices = response.competitorPrices;
-            console.log('TrueTag: Competitor prices received', this.competitorPrices);
+          if (chrome.runtime.lastError) {
+            console.warn('TrueTag: Background message failed', chrome.runtime.lastError.message);
+            resolve();
+            return;
           }
+
+          this.competitorPrices = response?.competitorPrices || {};
           resolve();
         }
       );
     });
   }
 
-  /**
-   * Process data for UI display
-   * @private
-   */
   processDataForUI() {
-    // Find best price among competitors
     let bestPrice = null;
     let bestPriceDifference = 0;
 
-    if (this.competitorPrices) {
-      for (const [store, priceData] of Object.entries(this.competitorPrices)) {
-        if (priceData && priceData.price) {
-          const price = parseFloat(priceData.price);
-          if (!bestPrice || price < bestPrice.price) {
-            bestPrice = {
-              store: priceData.store,
-              price: price,
-            };
-            bestPriceDifference = this.productData.price - price;
-          }
-        }
+    for (const priceData of Object.values(this.competitorPrices || {})) {
+      if (!priceData?.price) continue;
+      const price = Number.parseFloat(priceData.price);
+      if (!Number.isFinite(price)) continue;
+
+      if (!bestPrice || price < bestPrice.price) {
+        bestPrice = { store: priceData.store, price };
+        bestPriceDifference = (this.productData.price || 0) - price;
       }
     }
 
-    // Only show overlay if there's a meaningful savings or interesting history
-    if (!bestPrice && (!this.priceHistory || !this.priceHistory.records.length)) {
-      console.log('TrueTag: No significant savings or history found');
+    const hasHistory = (this.priceHistory?.records?.length || 0) >= this.config.priceHistory.minDataPoints;
+    const hasSavings = !!bestPrice && bestPriceDifference >= 10;
+
+    if (!hasHistory && !hasSavings) {
       return null;
     }
 
-    // Only show overlay if savings >= $10 or if there's price history data
-    const showOverlay =
-      (bestPrice && bestPriceDifference >= 10) ||
-      (this.priceHistory && this.priceHistory.records.length >= CONFIG.priceHistory.minDataPoints);
-
-    if (!showOverlay) {
-      console.log('TrueTag: Savings too small and no significant history');
-      return null;
-    }
-
-    // Determine if current price is a good deal
     let isGoodDeal = false;
     let dealDescription = '';
 
-    if (this.priceHistory && this.priceHistory.average) {
+    if (this.priceHistory?.average) {
       const percentageBelowAverage =
         ((this.priceHistory.average - this.productData.price) / this.priceHistory.average) * 100;
-
       if (percentageBelowAverage >= 10) {
         isGoodDeal = true;
         dealDescription = `${percentageBelowAverage.toFixed(0)}% below 30-day average`;
@@ -211,67 +442,35 @@ class TrueTagContentScript {
     }
 
     return {
-      bestPrice: bestPrice,
+      bestPrice,
       amazonPrice: this.productData.price,
       savings: bestPriceDifference,
       priceHistory: {
         average: this.priceHistory?.average || null,
-        min: this.priceHistory?.range.min || null,
-        max: this.priceHistory?.range.max || null,
+        min: this.priceHistory?.range?.min || null,
+        max: this.priceHistory?.range?.max || null,
         count: this.priceHistory?.count || 0,
-        isGoodDeal: isGoodDeal,
-        dealDescription: dealDescription,
+        isGoodDeal,
+        dealDescription,
       },
       competitors: this.competitorPrices || {},
     };
   }
 
-  /**
-   * Inject UI overlay into page
-   * @private
-   */
-  async injectUI(uiData) {
-    try {
-      // Create UI builder
-      this.uiBuilder = new UIBuilder();
-
-      // Create overlay with data
-      const overlay = this.uiBuilder.createOverlay(uiData, uiData.priceHistory);
-
-      // Wait a moment before injecting to ensure page is ready
-      await new Promise((resolve) => setTimeout(resolve, CONFIG.ui.overlay.showDelay));
-
-      // Inject into page
-      this.uiBuilder.injectIntoPage();
-
-      console.log('TrueTag: UI overlay injected');
-    } catch (error) {
-      console.error('TrueTag: Failed to inject UI', error);
-    }
-  }
-
-  /**
-   * Log current price to Supabase
-   * @private
-   */
   async logCurrentPrice() {
     try {
-      const priceRecord = {
+      await this.supabaseClient.insertPrice({
         modelNumber: this.productData.modelNumber,
         store: 'Amazon',
         price: this.productData.price,
-      };
-
-      await this.supabaseClient.insertPrice(priceRecord);
-      console.log('TrueTag: Price logged to database');
+      });
     } catch (error) {
-      console.error('TrueTag: Failed to log price', error);
+      console.warn('TrueTag: Price write failed', error);
     }
   }
 }
 
-// Initialize the content script
 const trueTag = new TrueTagContentScript();
 trueTag.init().catch((error) => {
-  console.error('TrueTag: Content script init failed', error);
+  console.error('TrueTag: content init failed', error);
 });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TrueTag",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Price comparison and price history tracker for the US tech market",
   "permissions": [
     "storage",

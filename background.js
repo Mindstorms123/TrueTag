@@ -34,6 +34,24 @@ class BackgroundWorker {
         return true; // Keep channel open for async response
       }
 
+      // Provide public runtime config to content script.
+      if (request.type === 'GET_PUBLIC_CONFIG') {
+        sendResponse({
+          config: {
+            supabase: {
+              url: CONFIG.supabase.url,
+              anonKey: CONFIG.supabase.anonKey,
+              table: CONFIG.supabase.table,
+              writeEndpoint: CONFIG.supabase.writeEndpoint,
+            },
+            priceHistory: CONFIG.priceHistory,
+            ui: CONFIG.ui,
+            debug: CONFIG.debug,
+          },
+        });
+        return;
+      }
+
       // Handle cache clear request
       if (request.type === 'CLEAR_PRICE_CACHE') {
         this.clearCache();
