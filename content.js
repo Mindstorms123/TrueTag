@@ -140,39 +140,33 @@ class SupabaseClient {
     this.config = config;
   }
 
-  getHeaders() {
-    return {
-      'Content-Type': 'application/json',
-      apikey: this.config.supabase.anonKey,
-      Authorization: `Bearer ${this.config.supabase.anonKey}`,
-    };
-  }
-
   async getPriceHistory(modelNumber) {
-    if (!this.config.supabase.url || !this.config.supabase.anonKey) {
+    if (!this.config.supabase.url || !this.config.supabase.anonKey || !modelNumber) {
       return [];
     }
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - this.config.priceHistory.averageWindow);
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        {
+          type: 'SUPABASE_GET_PRICE_HISTORY',
+          modelNumber,
+          days: this.config.priceHistory.averageWindow,
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
 
-    const query = new URLSearchParams({
-      model_number: `eq.${modelNumber}`,
-      created_at: `gte.${startDate.toISOString()}`,
-      order: 'created_at.desc',
-      limit: '1000',
+          if (response?.error) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          resolve(response?.records || []);
+        }
+      );
     });
-
-    const response = await fetch(
-      `${this.config.supabase.url}/rest/v1/${this.config.supabase.table}?${query.toString()}`,
-      { headers: this.getHeaders() }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Supabase history fetch failed: ${response.status}`);
-    }
-
-    return response.json();
   }
 
   async insertPrice(priceRecord) {
@@ -180,27 +174,27 @@ class SupabaseClient {
       return null;
     }
 
-    const payload = {
-      model_number: priceRecord.modelNumber,
-      store: priceRecord.store,
-      price: Number.parseFloat(priceRecord.price),
-      created_at: new Date().toISOString(),
-    };
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        {
+          type: 'SUPABASE_INSERT_PRICE',
+          record: priceRecord,
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
 
-    const response = await fetch(this.config.supabase.writeEndpoint, {
-      method: 'POST',
-      headers: {
-        ...this.getHeaders(),
-        'x-truetag-client': 'extension',
-      },
-      body: JSON.stringify(payload),
+          if (!response?.ok) {
+            reject(new Error(response?.error || 'Supabase write failed'));
+            return;
+          }
+
+          resolve(response.data || null);
+        }
+      );
     });
-
-    if (!response.ok) {
-      throw new Error(`Supabase write failed: ${response.status}`);
-    }
-
-    return response.json();
   }
 
   static calculateAveragePrice(records) {

@@ -34,6 +34,18 @@ class BackgroundWorker {
         return true; // Keep channel open for async response
       }
 
+      // Handle Supabase read requests from content script.
+      if (request.type === 'SUPABASE_GET_PRICE_HISTORY') {
+        this.handleSupabaseGetPriceHistory(request, sendResponse);
+        return true;
+      }
+
+      // Handle Supabase write requests from content script.
+      if (request.type === 'SUPABASE_INSERT_PRICE') {
+        this.handleSupabaseInsertPrice(request, sendResponse);
+        return true;
+      }
+
       // Provide public runtime config to content script.
       if (request.type === 'GET_PUBLIC_CONFIG') {
         sendResponse({
@@ -61,6 +73,87 @@ class BackgroundWorker {
 
       sendResponse({ error: 'Unknown request type' });
     });
+  }
+
+  getSupabaseHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      apikey: CONFIG.supabase.anonKey,
+      Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
+    };
+  }
+
+  async handleSupabaseGetPriceHistory(request, sendResponse) {
+    try {
+      const modelNumber = request.modelNumber;
+      const days = request.days || CONFIG.priceHistory.averageWindow;
+
+      if (!modelNumber || !CONFIG.supabase.url || !CONFIG.supabase.anonKey) {
+        sendResponse({ records: [] });
+        return;
+      }
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const query = new URLSearchParams({
+        model_number: `eq.${modelNumber}`,
+        created_at: `gte.${startDate.toISOString()}`,
+        order: 'created_at.desc',
+        limit: '1000',
+      });
+
+      const response = await fetch(
+        `${CONFIG.supabase.url}/rest/v1/${CONFIG.supabase.table}?${query.toString()}`,
+        { headers: this.getSupabaseHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Supabase history fetch failed: ${response.status}`);
+      }
+
+      const records = await response.json();
+      sendResponse({ records });
+    } catch (error) {
+      console.warn('Background: Supabase history fetch failed', error);
+      sendResponse({ records: [], error: error.message });
+    }
+  }
+
+  async handleSupabaseInsertPrice(request, sendResponse) {
+    try {
+      const record = request.record;
+      if (!record || !CONFIG.supabase.writeEndpoint || !CONFIG.supabase.anonKey) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      const payload = {
+        model_number: record.modelNumber,
+        store: record.store,
+        price: Number.parseFloat(record.price),
+        created_at: new Date().toISOString(),
+      };
+
+      const response = await fetch(CONFIG.supabase.writeEndpoint, {
+        method: 'POST',
+        headers: {
+          ...this.getSupabaseHeaders(),
+          'x-truetag-client': 'extension',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Supabase write failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      sendResponse({ ok: true, data });
+    } catch (error) {
+      console.warn('Background: Supabase write failed', error);
+      sendResponse({ ok: false, error: error.message });
+    }
   }
 
   /**
