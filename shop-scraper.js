@@ -312,6 +312,12 @@ function showPriceCaptureDialog(productInfo) {
       color: #86efac;
     }
 
+    .status-info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid #1e40af;
+      color: #93c5fd;
+    }
+
     .status-error {
       background: rgba(239, 68, 68, 0.1);
       border: 1px solid #7f1d1d;
@@ -472,11 +478,23 @@ function showPriceCaptureDialog(productInfo) {
         }
 
         if (response.success) {
-          console.log('ShopScraper: Price saved successfully');
-          showStatus(statusMsg, `✅ Price saved for ${productInfo.store}!`, 'success');
+          if (response.data?.skipped) {
+            // Duplicate price detected - same price already saved recently
+            console.log('ShopScraper: Price duplicate (already saved)');
+            showStatus(statusMsg, `ℹ️ This price was already saved!`, 'info');
+            // Still show next retailers even for duplicates
+            setTimeout(async () => {
+              const competitorLinks = await requestCompetitorLinks(productInfo);
+              renderNextRetailerState(container, panel, productInfo, price, competitorLinks, currentUrl, currentTitle);
+            }, 800);
+          } else {
+            // New price saved
+            console.log('ShopScraper: Price saved successfully');
+            showStatus(statusMsg, `✅ Price saved for ${productInfo.store}!`, 'success');
 
-          const competitorLinks = await requestCompetitorLinks(productInfo);
-          renderNextRetailerState(container, panel, productInfo, price, competitorLinks, currentUrl, currentTitle);
+            const competitorLinks = await requestCompetitorLinks(productInfo);
+            renderNextRetailerState(container, panel, productInfo, price, competitorLinks, currentUrl, currentTitle);
+          }
         } else {
           console.error('ShopScraper: Save failed', response.error);
           showStatus(statusMsg, `❌ Error: ${response.error}`, 'error');

@@ -59,15 +59,17 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
     const now = new Date().toISOString();
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
-    // Avoid duplicate inserts: prefer matching by offer_url when available
+    // Avoid duplicate inserts: check offer_url + price combination (strictest match)
+    // This prevents re-saving when user clicks same link and enters same price
     let duplicate = null;
     if (payload.offer_url) {
       const { data: byOffer } = await supabase
         .from('price_history')
         .select('price,created_at')
         .eq('offer_url', payload.offer_url)
+        .eq('price', payload.price)
         .gte('created_at', oneDayAgo)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -75,9 +77,11 @@ Deno.serve(async (req: Request) => {
       duplicate = byOffer;
     }
 
+    // If no exact URL+price match, check model+store+price combination (allows URL updates, prevents model duplicates)
     if (!duplicate && (payload.model_number || payload.asin)) {
       const query = supabase.from('price_history').select('price,created_at')
         .eq('store', payload.store)
+        .eq('price', payload.price)
         .gte('created_at', oneDayAgo)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -89,9 +93,10 @@ Deno.serve(async (req: Request) => {
       duplicate = byModel;
     }
 
-    if (duplicate && Math.abs(duplicate.price - payload.price) < 0.01) {
+    if (duplicate) {
+      // Exact duplicate found: same URL + price (or model + store + price within 7 days)
       return new Response(
-        JSON.stringify({ success: true, skipped: true }),
+        JSON.stringify({ success: true, skipped: true, reason: 'Price already recorded for this offer' }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
