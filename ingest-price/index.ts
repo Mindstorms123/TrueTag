@@ -3,9 +3,19 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 interface PriceRecord {
-  model_number: string;
-  store: string;
+  model_number?: string;
+  asin?: string;
+  product_title?: string;
+  amazon_url?: string;
+  offer_url?: string;
+  source_url?: string;
+  source_type?: string;
+  offer_type?: string;
+  page_title?: string;
+  saved_at?: string;
   price: number;
+  currency?: string;
+  store: string;
   created_at?: string;
 }
 
@@ -23,7 +33,8 @@ Deno.serve(async (req: Request) => {
     const payload: PriceRecord = await req.json();
 
     // Validate required fields
-    if (!payload.model_number || !payload.store || payload.price === undefined) {
+    // require either model_number or asin plus store and price
+    if ((!payload.model_number && !payload.asin) || !payload.store || payload.price === undefined) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -50,37 +61,64 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toISOString();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    // Check: gibt es einen Eintrag mit GLEICHER model + store + PREIS in letzten 24h?
-    // Wenn ja -> skip (Duplikat). Wenn nein -> insert (neue Preis-Version)
-    const { data: lastRecord } = await supabase
-      .from('price_history')
-      .select('price')
-      .eq('model_number', payload.model_number)
-      .eq('store', payload.store)
-      .gte('created_at', oneDayAgo)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // Avoid duplicate inserts: prefer matching by offer_url when available
+    let duplicate = null;
+    if (payload.offer_url) {
+      const { data: byOffer } = await supabase
+        .from('price_history')
+        .select('price,created_at')
+        .eq('offer_url', payload.offer_url)
+        .gte('created_at', oneDayAgo)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      duplicate = byOffer;
+    }
 
-    // Price hasn't changed -> skip (duplicate)
-    if (lastRecord && Math.abs(lastRecord.price - payload.price) < 0.01) {
+    if (!duplicate && (payload.model_number || payload.asin)) {
+      const query = supabase.from('price_history').select('price,created_at')
+        .eq('store', payload.store)
+        .gte('created_at', oneDayAgo)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (payload.model_number) query.eq('model_number', payload.model_number);
+      else if (payload.asin) query.eq('asin', payload.asin);
+
+      const { data: byModel } = await query.single();
+      duplicate = byModel;
+    }
+
+    if (duplicate && Math.abs(duplicate.price - payload.price) < 0.01) {
       return new Response(
         JSON.stringify({ success: true, skipped: true }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    // Price changed or new entry -> INSERT
+    // Price changed or new entry -> INSERT full enriched record into price_history
     const { error } = await supabase
       .from('price_history')
       .insert({
-        model_number: payload.model_number,
-        store: payload.store,
+        model_number: payload.model_number || null,
+        asin: payload.asin || null,
+        product_title: payload.product_title || null,
+        offer_url: payload.offer_url || null,
+        source_url: payload.source_url || null,
+        source_type: payload.source_type || null,
+        offer_type: payload.offer_type || null,
+        page_title: payload.page_title || null,
         price: payload.price,
+        currency: payload.currency || 'USD',
+        store: payload.store,
+        saved_at: payload.saved_at || payload.created_at || now,
         created_at: payload.created_at || now,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Insert failed:', JSON.stringify(error, null, 2));
+      throw error;
+    }
 
     return new Response(
       JSON.stringify({ success: true, inserted: true }),
@@ -88,9 +126,15 @@ Deno.serve(async (req: Request) => {
     );
 
   } catch (error) {
-    console.error('Error:', error.message);
+    const details = error && typeof error === 'object' ? error : null;
+    const message = error instanceof Error ? error.message : details?.message || String(error);
+    console.error('Error:', message, details ? JSON.stringify(details, null, 2) : '');
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error: message,
+        details: details?.details || details?.hint || null,
+        code: details?.code || null,
+      }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

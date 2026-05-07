@@ -7,7 +7,7 @@ const DEFAULT_CONFIG = {
   supabase: {
     url: '',
     anonKey: '',
-    table: 'price_history',
+      table: 'v_current_store_offers',
     writeEndpoint: '',
   },
   priceHistory: {

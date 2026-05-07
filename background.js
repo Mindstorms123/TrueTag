@@ -115,9 +115,25 @@ class BackgroundWorker {
 
   async handleSaveCompetitorPrice(request, sendResponse) {
     try {
-      const { productInfo, price } = request;
+      const { productInfo: rawProductInfo, price } = request;
 
-      if (!productInfo || !productInfo.modelNumber || !productInfo.store || !price) {
+      // Normalize incoming productInfo to accept both camelCase and snake_case
+      const productInfo = {
+        model_number: rawProductInfo?.model_number || rawProductInfo?.modelNumber || null,
+        asin: rawProductInfo?.asin || rawProductInfo?.ASIN || null,
+        product_title: rawProductInfo?.product_title || rawProductInfo?.productTitle || rawProductInfo?.title || null,
+        amazon_url: rawProductInfo?.amazon_url || rawProductInfo?.amazonUrl || null,
+        source_url: rawProductInfo?.source_url || rawProductInfo?.sourceUrl || null,
+        source_type: rawProductInfo?.source_type || rawProductInfo?.sourceType || null,
+        offer_url: rawProductInfo?.offer_url || rawProductInfo?.offerUrl || null,
+        offer_type: rawProductInfo?.offer_type || rawProductInfo?.offerType || null,
+        page_title: rawProductInfo?.page_title || rawProductInfo?.pageTitle || null,
+        saved_at: rawProductInfo?.saved_at || rawProductInfo?.savedAt || null,
+        store: rawProductInfo?.store || rawProductInfo?.storeName || null,
+        created_at: rawProductInfo?.created_at || rawProductInfo?.createdAt || new Date().toISOString(),
+      };
+
+      if ((!productInfo.model_number && !productInfo.asin) || !productInfo.store || !price) {
         sendResponse({ success: false, error: 'Missing required data' });
         return;
       }
@@ -132,19 +148,19 @@ class BackgroundWorker {
           'Authorization': `Bearer ${CONFIG.supabase.anonKey}`,
         },
         body: JSON.stringify({
-          model_number: productInfo.modelNumber,
+          model_number: productInfo.model_number,
+          asin: productInfo.asin,
+          product_title: productInfo.product_title,
+          amazon_url: productInfo.amazon_url,
+          offer_url: productInfo.offer_url,
+          source_url: productInfo.source_url,
+          source_type: productInfo.source_type,
+          offer_type: productInfo.offer_type,
+          page_title: productInfo.page_title,
           store: productInfo.store,
           price: price,
-          product_title: productInfo.title || productInfo.productTitle || null,
-          asin: productInfo.asin || null,
-          amazon_url: productInfo.amazonUrl || null,
-          source_url: productInfo.sourceUrl || productInfo.offerUrl || null,
-          source_type: productInfo.sourceType || null,
-          offer_url: productInfo.offerUrl || productInfo.sourceUrl || null,
-          offer_type: productInfo.offerType || productInfo.sourceType || null,
-          page_title: productInfo.pageTitle || null,
-          saved_at: productInfo.savedAt || new Date().toISOString(),
-          created_at: new Date().toISOString(),
+          saved_at: productInfo.saved_at || new Date().toISOString(),
+          created_at: productInfo.created_at || new Date().toISOString(),
         }),
       });
 
