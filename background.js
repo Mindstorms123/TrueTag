@@ -97,6 +97,18 @@ class BackgroundWorker {
         return true; // Keep channel open for async
       }
 
+      // Open a retailer page in a new tab after persisting product info
+      if (request.type === 'OPEN_URL') {
+        try {
+          chrome.tabs.create({ url: request.url });
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('Background: Failed to open URL', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        return;
+      }
+
       sendResponse({ error: 'Unknown request type' });
     });
   }
@@ -123,6 +135,16 @@ class BackgroundWorker {
           model_number: productInfo.modelNumber,
           store: productInfo.store,
           price: price,
+          product_title: productInfo.title || productInfo.productTitle || null,
+          asin: productInfo.asin || null,
+          amazon_url: productInfo.amazonUrl || null,
+          source_url: productInfo.sourceUrl || productInfo.offerUrl || null,
+          source_type: productInfo.sourceType || null,
+          offer_url: productInfo.offerUrl || productInfo.sourceUrl || null,
+          offer_type: productInfo.offerType || productInfo.sourceType || null,
+          page_title: productInfo.pageTitle || null,
+          saved_at: productInfo.savedAt || new Date().toISOString(),
+          created_at: new Date().toISOString(),
         }),
       });
 
@@ -152,20 +174,16 @@ class BackgroundWorker {
   async handleSupabaseGetPriceHistory(request, sendResponse) {
     try {
       const modelNumber = request.modelNumber;
-      const days = request.days || CONFIG.priceHistory.averageWindow;
 
       if (!modelNumber || !CONFIG.supabase.url || !CONFIG.supabase.anonKey) {
         sendResponse({ records: [] });
         return;
       }
 
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
       const query = new URLSearchParams({
         model_number: `eq.${modelNumber}`,
-        created_at: `gte.${startDate.toISOString()}`,
-        order: 'created_at.desc',
+        active: 'eq.true',
+        order: 'saved_at.desc,last_seen_at.desc',
         limit: '1000',
       });
 
@@ -199,6 +217,15 @@ class BackgroundWorker {
         store: record.store,
         price: Number.parseFloat(record.price),
         created_at: new Date().toISOString(),
+        product_title: record.productTitle || null,
+        asin: record.asin || null,
+        amazon_url: record.amazonUrl || null,
+        source_url: record.sourceUrl || record.offerUrl || null,
+        source_type: record.sourceType || null,
+        offer_url: record.offerUrl || record.sourceUrl || null,
+        offer_type: record.offerType || record.sourceType || null,
+        page_title: record.pageTitle || null,
+        saved_at: record.savedAt || new Date().toISOString(),
       };
 
       const response = await fetch(CONFIG.supabase.writeEndpoint, {

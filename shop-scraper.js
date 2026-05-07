@@ -74,11 +74,39 @@ function getStoreDomain(store) {
   return '';
 }
 
+function isConcreteProductPage(store, url) {
+  if (!url) return false;
+
+  const normalized = String(url).toLowerCase();
+
+  if (store.includes('Best Buy')) {
+    return /\/product\//i.test(normalized) || /\/site\//i.test(normalized) && !/searchpage\.jsp/i.test(normalized);
+  }
+
+  if (store.includes('Newegg')) {
+    return /\/p\/[a-z0-9-]+/i.test(normalized) && !/\/p\/pl\b/i.test(normalized);
+  }
+
+  if (store.includes('Target')) {
+    return /\/p\//i.test(normalized) && !/searchTerm=/i.test(normalized);
+  }
+
+  if (store.includes('Micro Center')) {
+    return /\/product\//i.test(normalized) || /\/p\//i.test(normalized);
+  }
+
+  return false;
+}
+
 /**
  * Show dialog to capture price and confirm product
  */
 function showPriceCaptureDialog(productInfo) {
   console.log('ShopScraper: Showing elegant price capture panel');
+
+  const currentUrl = window.location.href;
+  const currentTitle = document.title;
+  const productPage = isConcreteProductPage(productInfo.store, currentUrl);
 
   // Extract price from page first
   const extractedPrice = extractPriceFromPage();
@@ -88,8 +116,11 @@ function showPriceCaptureDialog(productInfo) {
   let validatedPrice = null;
   if (extractedPrice && productInfo.amazonPrice) {
     const ratio = extractedPrice / productInfo.amazonPrice;
-    // Only accept prices between 50% and 200% of Amazon price
-    if (ratio >= 0.5 && ratio <= 2.0) {
+    // Only accept prices between 70% and 160% of Amazon price.
+    // If the page is a product page, allow a slightly wider range.
+    const lowerBound = productPage ? 0.6 : 0.7;
+    const upperBound = productPage ? 1.8 : 1.6;
+    if (ratio >= lowerBound && ratio <= upperBound) {
       validatedPrice = extractedPrice;
       console.log(`ShopScraper: ✅ Extracted price validated (ratio: ${ratio.toFixed(2)})`);
     } else {
@@ -302,6 +333,7 @@ function showPriceCaptureDialog(productInfo) {
       <div class="product-title">${productInfo.title}</div>
       <div class="product-price">Store: ${productInfo.store}</div>
       <div class="amazon-price">Amazon: $${(productInfo.amazonPrice || 0).toFixed(2)}</div>
+      <div class="amazon-price">${productPage ? 'Product page detected' : 'Search/results page detected'}</div>
     </div>
 
     <div id="status-message"></div>
@@ -361,7 +393,18 @@ function showPriceCaptureDialog(productInfo) {
     chrome.runtime.sendMessage(
       {
         type: 'SAVE_COMPETITOR_PRICE',
-        productInfo: productInfo,
+        productInfo: {
+          ...productInfo,
+          sourceUrl: currentUrl,
+          sourceType: productPage ? 'product' : 'search',
+          offerUrl: currentUrl,
+          offerType: productPage ? 'product' : 'search',
+          pageTitle: currentTitle,
+          savedAt: new Date().toISOString(),
+          productTitle: productInfo.title,
+          asin: productInfo.asin || null,
+          amazonUrl: productInfo.amazonUrl || null,
+        },
         price: price,
       },
       (response) => {

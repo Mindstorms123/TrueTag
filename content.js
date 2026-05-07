@@ -230,8 +230,8 @@ class OverlayUI {
       'right:20px',
       'bottom:20px',
       'z-index:2147483647',
-      'width:360px',
-      'max-width:calc(100vw - 40px)',
+      'width:390px',
+      'max-width:calc(100vw - 24px)',
       'font-family:Inter, Segoe UI, system-ui, sans-serif',
       'background:rgba(15,23,42,0.97)',
       'color:#f1f5f9',
@@ -252,30 +252,99 @@ class OverlayUI {
         background: #334155 !important;
         border-color: #64748b !important;
       }
-      .truetag-found-btn {
-        transition: all 200ms ease !important;
+      .truetag-section {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        background: #1a1f3a;
       }
-      .truetag-found-btn:hover {
-        background: #059669 !important;
+      .truetag-section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #cbd5e1;
+        margin-bottom: 10px;
+        letter-spacing: .2px;
+      }
+      .truetag-saved-card {
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #065f46;
+        background: linear-gradient(135deg, rgba(16,185,129,.15), rgba(16,185,129,.05));
+        margin-bottom: 10px;
+      }
+      .truetag-saved-card:last-child {
+        margin-bottom: 0;
+      }
+      .truetag-saved-store {
+        font-size: 13px;
+        font-weight: 700;
+        color: #86efac;
+      }
+      .truetag-saved-price {
+        font-size: 17px;
+        font-weight: 800;
+        color: #f8fafc;
+        margin-top: 2px;
+      }
+      .truetag-saved-meta {
+        font-size: 11px;
+        color: #94a3b8;
+        margin-top: 4px;
+      }
+      .truetag-saved-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #0f766e;
+        color: #ecfeff;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .truetag-empty-state {
+        font-size: 12px;
+        color: #94a3b8;
+      }
+      .truetag-shop-link {
+        display: block;
+        margin-top: 10px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #1e293b;
+        border: 1px solid #475569;
+        color: #e2e8f0;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 600;
+        text-align: center;
       }
     `;
 
-    // Build shop links HTML - simple clickable links only
-    const shopLinks = uiData.shopLinks || {};
-    const shopLinksHTML = Object.entries(shopLinks)
-      .map(([storeName, linkData]) => {
+    const savedOffersHTML = (uiData.savedOffers || [])
+      .map((offer) => {
+        const linkUrl = offer.offerUrl || uiData.shopLinks?.[offer.storeKey]?.url || '';
+        const timestamp = offer.savedAtText || 'Unknown time';
+        const sourceLabel = offer.sourceType === 'product' ? 'product page' : 'search page';
+        return `
+          <div class="truetag-saved-card">
+            <div class="truetag-saved-store">${offer.storeName}</div>
+            <div class="truetag-saved-price">Another user found this for $${Number(offer.price || offer.currentPrice || 0).toFixed(2)}</div>
+            <div class="truetag-saved-meta">Saved ${timestamp}${offer.sourceType ? ` • ${sourceLabel}` : ''}</div>
+            ${linkUrl ? `<a href="${linkUrl}" target="_blank" rel="noopener noreferrer" class="truetag-saved-link truetag-shop-link" data-store="${offer.storeName}" data-url="${linkUrl}">${offer.sourceType === 'product' ? 'Open product page' : 'Open search results'}</a>` : ''}
+          </div>
+        `;
+      })
+      .join('');
+
+    const remainingLinksHTML = (uiData.remainingLinks || [])
+      .map((linkData) => {
         if (!linkData || !linkData.url) return '';
         return `
-          <a 
-            href="${linkData.url}" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            class="truetag-shop-link"
-            data-store="${linkData.store}"
-            style="display:block;margin-top:10px;padding:12px;border-radius:8px;background:#1e293b;border:1px solid #475569;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:600;text-align:center;"
-          >
-            🔍 Compare at ${linkData.store}
-          </a>
+          <a href="${linkData.url}" target="_blank" rel="noopener noreferrer" class="truetag-shop-link" data-store="${linkData.store}" data-url="${linkData.url}">🔍 Compare at ${linkData.store}</a>
         `;
       })
       .join('');
@@ -294,13 +363,18 @@ class OverlayUI {
         <div style="font-size:24px;font-weight:700;color:#10b981;">$${(uiData.amazonPrice || 0).toFixed(2)}</div>
       </div>
 
-      <div style="margin-top:14px;padding:12px;background:#1a1f3a;border-radius:8px;border:1px solid #334155;">
-        <div style="font-size:12px;font-weight:600;color:#cbd5e1;margin-bottom:10px;">📊 Check other retailers:</div>
-        ${shopLinksHTML}
+      <div class="truetag-section">
+        <div class="truetag-section-title">📌 Saved offers from other users</div>
+        ${savedOffersHTML || '<div class="truetag-empty-state">No saved offers yet.</div>'}
+      </div>
+
+      <div class="truetag-section">
+        <div class="truetag-section-title">📊 More retailers to check</div>
+        ${remainingLinksHTML || '<div class="truetag-empty-state">All available retailers already have a saved offer.</div>'}
       </div>
 
       <div style="margin-top:10px;text-align:center;font-size:11px;color:#64748b;">
-        Click store → find product → click "Found" button
+        Open a saved offer or compare a store without saved data
       </div>
     `;
 
@@ -309,17 +383,28 @@ class OverlayUI {
     // Close button
     overlay.querySelector('#truetag-close')?.addEventListener('click', () => overlay.remove());
 
-    // Shop links - save product info when clicked
+    // Shop links - save product info when clicked so the shop page can show the panel
     overlay.querySelectorAll('.truetag-shop-link').forEach(link => {
       link.addEventListener('click', async (e) => {
-        const store = e.target.dataset.store;
-        console.log(`TrueTag: User clicked link for ${store}`);
+        e.preventDefault();
+
+        const target = e.currentTarget;
+        const store = target.dataset.store;
+        const url = target.dataset.url || target.getAttribute('href');
+        console.log(`TrueTag: User clicked link for ${store}`, url);
 
         const productInfo = {
           title: uiData.title,
+          productTitle: uiData.title,
           modelNumber: uiData.modelNumber,
+          asin: uiData.asin || null,
           amazonPrice: uiData.amazonPrice,
+          amazonUrl: uiData.amazonUrl || null,
           store: store,
+          offerUrl: url,
+          sourceUrl: url,
+          sourceType: url && /\/p\//i.test(url) ? 'product' : 'search',
+          offerType: url && /\/p\//i.test(url) ? 'product' : 'search',
           timestamp: Date.now(),
         };
 
@@ -327,6 +412,7 @@ class OverlayUI {
           // Save to storage so shop-scraper.js can access it
           await chrome.storage.local.set({ 'truetag_product_info': productInfo });
           console.log(`TrueTag: Saved product info for ${store}:`, productInfo);
+          chrome.runtime.sendMessage({ type: 'OPEN_URL', url });
         } catch (error) {
           console.error(`TrueTag: Failed to save product info`, error);
         }
@@ -444,6 +530,70 @@ class TrueTagContentScript {
     }
   }
 
+  normalizeStoreKey(storeName) {
+    return String(storeName || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  formatSavedTimestamp(value) {
+    if (!value) return 'unknown time';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'unknown time';
+
+    return new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  }
+
+  buildSavedOffers(records) {
+    const latestByStore = new Map();
+
+    for (const record of records || []) {
+      const storeName = record.store || '';
+      if (!storeName || storeName.toLowerCase() === 'amazon') {
+        continue;
+      }
+
+      const storeKey = this.normalizeStoreKey(storeName);
+      const savedAt = record.saved_at || record.created_at || record.savedAt || record.createdAt || null;
+      const existing = latestByStore.get(storeKey);
+      const existingDate = existing ? new Date(existing.savedAtRaw || 0).getTime() : 0;
+      const currentDate = new Date(savedAt || 0).getTime();
+
+      if (!existing || currentDate >= existingDate) {
+        latestByStore.set(storeKey, {
+          storeKey,
+          storeName,
+          price: Number.parseFloat(record.current_price || record.price),
+          currentPrice: Number.parseFloat(record.current_price || record.price),
+          savedAtRaw: savedAt,
+          savedAtText: this.formatSavedTimestamp(savedAt),
+          offerUrl: record.offer_url || record.source_url || record.url || null,
+          sourceUrl: record.source_url || record.offer_url || record.url || null,
+          sourceType: record.offer_type || record.source_type || null,
+          pageTitle: record.page_title || null,
+          amazonUrl: record.amazon_url || null,
+          modelNumber: record.model_number || null,
+          asin: record.asin || null,
+          productTitle: record.offer_product_title || record.product_title || null,
+        });
+      }
+    }
+
+    const order = ['bestbuy', 'newegg', 'target', 'microcenter'];
+    return Array.from(latestByStore.values()).sort((a, b) => {
+      const aIndex = order.indexOf(a.storeKey);
+      const bIndex = order.indexOf(b.storeKey);
+      if (aIndex === -1 && bIndex === -1) return a.storeName.localeCompare(b.storeName);
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
+  }
+
   async requestCompetitorPrices() {
     this.competitorPrices = {};
 
@@ -469,19 +619,27 @@ class TrueTagContentScript {
   }
 
   processDataForUI() {
-    // Get competitor shop links
     const shopLinks = this.competitorPrices || {};
     const amazonPrice = Number.parseFloat(this.productData.price || 0);
+    const savedOffers = this.buildSavedOffers(this.priceHistory?.records || []);
+    const savedStoreKeys = new Set(savedOffers.map((offer) => offer.storeKey));
+    const remainingLinks = Object.entries(shopLinks)
+      .filter(([storeKey]) => !savedStoreKeys.has(storeKey))
+      .map(([, linkData]) => linkData)
+      .filter(Boolean);
     
-    // Log links to console for debugging
     console.log('TrueTag: Competitor Links:', shopLinks);
+    console.log('TrueTag: Saved offers:', savedOffers);
     
-    // Return UI data
     return {
       title: this.productData.title,
       modelNumber: this.productData.modelNumber,
+      asin: this.productData.asin,
+      amazonUrl: this.productData.currentUrl,
       amazonPrice: amazonPrice,
       shopLinks: shopLinks,
+      savedOffers,
+      remainingLinks,
     };
   }
 
@@ -500,6 +658,10 @@ class TrueTagContentScript {
           modelNumber: this.productData.modelNumber,
           store: store,
           price: parseFloat(price),
+          productTitle: this.productData.title,
+          asin: this.productData.asin,
+          amazonUrl: this.productData.currentUrl,
+          sourceType: 'amazon',
         });
         console.log(`TrueTag: ✅ Saved ${store} price to database`);
         alert(`✅ Price saved for ${store}!`);
@@ -510,59 +672,16 @@ class TrueTagContentScript {
     }
   }
 
-  async askForPriceAndSave(store) {
-    console.log(`TrueTag: User clicked Found for ${store}`);
-    
-    // Step 1: Ask if user wants to save
-    const shouldSave = confirm(
-      `Ready to save price for ${store}?\n\n` +
-      `${this.productData.title}\n` +
-      `Amazon: $${(this.productData.price || 0).toFixed(2)}\n\n` +
-      `Click OK to open ${store} in new tab.\n` +
-      `The dialog will appear on the shop page.`
-    );
-
-    if (!shouldSave) {
-      console.log(`TrueTag: User declined ${store}`);
-      return;
-    }
-
-    // Store product info for the shop page
-    const productInfo = {
-      title: this.productData.title,
-      modelNumber: this.productData.modelNumber,
-      amazonPrice: this.productData.price,
-      store: store,
-      timestamp: Date.now(),
-    };
-
-    try {
-      // Save to chrome.storage.local so shop-scraper.js can access it
-      await chrome.storage.local.set({ 'truetag_product_info': productInfo });
-      console.log(`TrueTag: Saved product info to session:`, productInfo);
-
-      // Ask background to open shop link in new tab
-      const shopLinks = this.competitorPrices[store.toLowerCase()] || {};
-      if (shopLinks.url) {
-        chrome.runtime.sendMessage({
-          type: 'OPEN_SHOP_TAB',
-          url: shopLinks.url,
-          store: store,
-        });
-        console.log(`TrueTag: Sent message to open ${store}`);
-      }
-    } catch (error) {
-      console.error(`TrueTag: Failed to save product info`, error);
-      alert(`❌ Error: Could not prepare shop tab`);
-    }
-  }
-
   async logCurrentPrice() {
     try {
       await this.supabaseClient.insertPrice({
         modelNumber: this.productData.modelNumber,
         store: 'Amazon',
         price: this.productData.price,
+        productTitle: this.productData.title,
+        asin: this.productData.asin,
+        amazonUrl: this.productData.currentUrl,
+        sourceType: 'amazon',
       });
     } catch (error) {
       console.warn('TrueTag: Price write failed', error);

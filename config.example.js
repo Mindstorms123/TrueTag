@@ -11,7 +11,7 @@ const CONFIG = {
     // Allowed: anon public key from Supabase Settings > API > Project API keys
     // Never use: service_role key in this extension config
     anonKey: 'your-anon-key-here',
-    table: 'price_history',
+    table: 'v_current_store_offers',
     // Edge Function endpoint that performs validated writes
     // Example: https://<project-ref>.supabase.co/functions/v1/ingest-price
     writeEndpoint: 'https://fsqhokrifvwuqbjmlovo.supabase.co/functions/v1/ingest-price',

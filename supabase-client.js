@@ -25,19 +25,16 @@ class SupabaseClient {
   }
 
   /**
-   * Fetch price history for a product by model number
+   * Fetch current store offers for a product by model number.
+   * This reads the compact summary view instead of the full event table.
    * @param {string} modelNumber - The product's model number
-   * @param {number} days - Number of days to lookback
-   * @returns {Promise<Array>} Array of price records
+   * @returns {Promise<Array>} Array of current offer rows
    */
-  async getPriceHistory(modelNumber, days = CONFIG.priceHistory.averageWindow) {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
+  async getPriceHistory(modelNumber) {
     const query = new URLSearchParams({
       'model_number': `eq.${modelNumber}`,
-      'created_at': `gte.${startDate.toISOString()}`,
-      'order': 'created_at.desc',
+      'active': 'eq.true',
+      'order': 'saved_at.desc,last_seen_at.desc',
       'limit': '1000',
     });
 
@@ -71,6 +68,15 @@ class SupabaseClient {
       store: priceRecord.store,
       price: parseFloat(priceRecord.price),
       created_at: new Date().toISOString(),
+        product_title: priceRecord.productTitle || null,
+        asin: priceRecord.asin || null,
+        amazon_url: priceRecord.amazonUrl || null,
+      source_url: priceRecord.sourceUrl || priceRecord.offerUrl || null,
+      source_type: priceRecord.sourceType || null,
+      offer_url: priceRecord.offerUrl || priceRecord.sourceUrl || null,
+      offer_type: priceRecord.offerType || priceRecord.sourceType || null,
+      page_title: priceRecord.pageTitle || null,
+      saved_at: priceRecord.savedAt || new Date().toISOString(),
     };
 
     try {
