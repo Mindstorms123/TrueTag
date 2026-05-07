@@ -145,7 +145,10 @@ class BackgroundWorker {
       });
 
       if (!response.ok) {
-        throw new Error(`Supabase write failed: ${response.status}`);
+        const errorBody = await response.text();
+        throw new Error(
+          `Supabase write failed: ${response.status} ${response.statusText} ${errorBody}`
+        );
       }
 
       const data = await response.json();
