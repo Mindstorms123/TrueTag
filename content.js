@@ -552,12 +552,13 @@ class TrueTagContentScript {
     const latestByStore = new Map();
 
     for (const record of records || []) {
-      const storeName = record.store || '';
-      if (!storeName || storeName.toLowerCase() === 'amazon') {
+      const storeName = record.store_name || record.store || '';
+      const storeKey = record.store_key || this.normalizeStoreKey(storeName);
+
+      if (!storeName || storeKey === 'amazon' || storeName.toLowerCase() === 'amazon') {
         continue;
       }
 
-      const storeKey = this.normalizeStoreKey(storeName);
       const savedAt = record.saved_at || record.created_at || record.savedAt || record.createdAt || null;
       const existing = latestByStore.get(storeKey);
       const existingDate = existing ? new Date(existing.savedAtRaw || 0).getTime() : 0;

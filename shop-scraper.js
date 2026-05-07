@@ -317,6 +317,60 @@ function showPriceCaptureDialog(productInfo) {
       border: 1px solid #7f1d1d;
       color: #fca5a5;
     }
+
+    .saved-summary {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0.05));
+      border: 1px solid #065f46;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .saved-summary-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #86efac;
+      margin-bottom: 4px;
+    }
+
+    .saved-summary-price {
+      font-size: 22px;
+      font-weight: 800;
+      color: #10b981;
+      margin-bottom: 4px;
+    }
+
+    .saved-summary-meta {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .next-retailers-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 10px;
+    }
+
+    .next-retailer-link {
+      display: block;
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #e2e8f0;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .next-retailer-link:hover {
+      border-color: var(--color-accent);
+      background: #273548;
+    }
   `;
 
   // Build HTML
@@ -420,12 +474,9 @@ function showPriceCaptureDialog(productInfo) {
         if (response.success) {
           console.log('ShopScraper: Price saved successfully');
           showStatus(statusMsg, `✅ Price saved for ${productInfo.store}!`, 'success');
-          
-          // Close after 2 seconds
-          setTimeout(() => {
-                        clearProductInfo();
-            container.remove();
-          }, 2000);
+
+          const competitorLinks = await requestCompetitorLinks(productInfo);
+          renderNextRetailerState(container, panel, productInfo, price, competitorLinks, currentUrl, currentTitle);
         } else {
           console.error('ShopScraper: Save failed', response.error);
           showStatus(statusMsg, `❌ Error: ${response.error}`, 'error');
@@ -437,6 +488,108 @@ function showPriceCaptureDialog(productInfo) {
   });
 
   document.body.appendChild(container);
+}
+
+function normalizeStoreKey(store) {
+  return String(store || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function formatRetailerLinks(competitorLinks, currentStore, productInfo) {
+  const currentStoreKey = normalizeStoreKey(currentStore);
+  const order = ['bestbuy', 'newegg', 'target', 'microcenter'];
+
+  return Object.entries(competitorLinks || {})
+    .filter(([storeKey, linkData]) => linkData && linkData.url && storeKey !== currentStoreKey)
+    .sort(([leftKey], [rightKey]) => {
+      const leftIndex = order.indexOf(leftKey);
+      const rightIndex = order.indexOf(rightKey);
+      if (leftIndex === -1 && rightIndex === -1) return leftKey.localeCompare(rightKey);
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    })
+    .map(([storeKey, linkData]) => {
+      const storeName = linkData.store || storeKey;
+      return `
+        <a href="${linkData.url}" target="_blank" rel="noopener noreferrer" class="next-retailer-link" data-store="${storeName}" data-url="${linkData.url}">🔍 Compare at ${storeName}</a>
+      `;
+    })
+    .join('');
+}
+
+async function requestCompetitorLinks(productInfo) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        type: 'FETCH_COMPETITOR_PRICES',
+        productTitle: productInfo.title || productInfo.productTitle || productInfo.product_title,
+        modelNumber: productInfo.modelNumber || productInfo.model_number,
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('ShopScraper: Failed to fetch competitor links', chrome.runtime.lastError.message);
+          resolve({});
+          return;
+        }
+
+        resolve(response?.competitorPrices || {});
+      }
+    );
+  });
+}
+
+function renderNextRetailerState(container, panel, productInfo, price, competitorLinks, currentUrl, currentTitle) {
+  const nextLinksHTML = formatRetailerLinks(competitorLinks, productInfo.store, productInfo);
+  const shopCount = Object.values(competitorLinks || {}).filter(Boolean).length;
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">✓ TrueTag</div>
+      <button class="panel-close" id="panel-close">×</button>
+    </div>
+
+    <div class="saved-summary">
+      <div class="saved-summary-label">Price saved</div>
+      <div class="saved-summary-price">$${Number(price || 0).toFixed(2)}</div>
+      <div class="saved-summary-meta">${productInfo.store} · ${currentTitle}</div>
+    </div>
+
+    <div class="next-retailers-title">Continue at another retailer</div>
+    <div id="status-message"></div>
+    ${nextLinksHTML || '<div class="status-message status-success">No further retailer links available.</div>'}
+  `;
+
+  const closeBtn = panel.querySelector('#panel-close');
+  closeBtn?.addEventListener('click', () => {
+    clearProductInfo();
+    container.remove();
+  });
+
+  panel.querySelectorAll('.next-retailer-link').forEach((link) => {
+    link.addEventListener('click', async (event) => {
+      event.preventDefault();
+
+      const target = event.currentTarget;
+      const url = target.dataset.url || target.getAttribute('href');
+      const store = target.dataset.store || 'Retailer';
+
+      const nextProductInfo = {
+        ...productInfo,
+        store,
+        offerUrl: url,
+        sourceUrl: url,
+        sourceType: /\/p\//i.test(url || '') ? 'product' : 'search',
+        offerType: /\/p\//i.test(url || '') ? 'product' : 'search',
+      };
+
+      await chrome.storage.local.set({ 'truetag_product_info': nextProductInfo });
+      chrome.runtime.sendMessage({ type: 'OPEN_URL', url });
+    });
+  });
+
+  console.log('ShopScraper: Showing next retailer links', { shopCount, currentUrl });
 }
 
 function showStatus(element, message, type) {

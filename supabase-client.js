@@ -50,7 +50,11 @@ class SupabaseClient {
         throw new Error(`Supabase error: ${response.statusText}`);
       }
 
-      return await response.json();
+      const records = await response.json();
+      return records.map((record) => ({
+        ...record,
+        store: record.store_name || record.store_key || record.store || null,
+      }));
     } catch (error) {
       console.error('Failed to fetch price history:', error);
       return [];
