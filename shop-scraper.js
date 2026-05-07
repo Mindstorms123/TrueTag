@@ -438,19 +438,19 @@ function extractPriceFromPage() {
  */
 function extractBestBuyPrice() {
   try {
-    // Try different price selectors on Best Buy
+    // Try only explicit product-price selectors on Best Buy
     const selectors = [
-      '[data-testid="priceblock"] [class*="price"]',
-      '[class*="Price"] [class*="currency"]',
-      'div[class*="priceLarge"]',
-      'span[class*="Price"]',
-      '[aria-label*="$"]',
+      '[data-testid="customer-price"]',
+      '[data-testid="shop-product-price"]',
+      '[itemprop="price"]',
+      'meta[property="product:price:amount"]',
+      'meta[itemprop="price"]',
     ];
 
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element) {
-        const text = element.textContent;
+        const text = element.content || element.getAttribute('content') || element.textContent;
         const price = extractNumericPrice(text);
         if (price) {
           console.log('ShopScraper: Best Buy price found:', price);
@@ -459,16 +459,37 @@ function extractBestBuyPrice() {
       }
     }
 
-    // Fallback: Search all page text for price patterns
-    const pageText = document.body.innerText;
-    const prices = pageText.match(/\$\s*(\d+\.?\d{0,2})/g);
-    if (prices && prices.length > 0) {
-      const price = extractNumericPrice(prices[0]);
-      if (price && price > 50 && price < 10000) {
-        console.log('ShopScraper: Best Buy price (fallback):', price);
-        return price;
-      }
+    // Fallback: inspect visible price-like nodes in the product summary area.
+    // Prefer the largest displayed price, which is usually the main product price.
+    const candidateNodes = Array.from(document.querySelectorAll('main *, [role="main"] *'))
+      .filter((element) => {
+        const text = (element.textContent || '').trim();
+        if (!text) return false;
+        return /^\$\d{2,5}(?:\.\d{2})?$/.test(text) || /\$\d{2,5}(?:\.\d{2})?/.test(text);
+      })
+      .map((element) => {
+        const text = (element.textContent || '').trim();
+        const price = extractNumericPrice(text);
+        const fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize || '0') || 0;
+        const rect = element.getBoundingClientRect();
+        const visibleArea = rect.width > 0 && rect.height > 0 ? rect.width * rect.height : 0;
+        return { element, text, price, fontSize, visibleArea };
+      })
+      .filter((candidate) => candidate.price && candidate.price > 50 && candidate.price < 10000);
+
+    if (candidateNodes.length > 0) {
+      candidateNodes.sort((a, b) => {
+        if (b.fontSize !== a.fontSize) return b.fontSize - a.fontSize;
+        if (b.visibleArea !== a.visibleArea) return b.visibleArea - a.visibleArea;
+        return b.price - a.price;
+      });
+
+      const bestCandidate = candidateNodes[0];
+      console.log('ShopScraper: Best Buy visible fallback price found:', bestCandidate.price, bestCandidate.text);
+      return bestCandidate.price;
     }
+
+    console.log('ShopScraper: Best Buy price not found with strict selectors or visible fallback');
   } catch (error) {
     console.error('ShopScraper: Best Buy extraction error', error);
   }
@@ -481,18 +502,18 @@ function extractBestBuyPrice() {
  */
 function extractNeweggPrice() {
   try {
-    // Try Newegg price selectors
+    // Try only explicit product-price selectors on Newegg
     const selectors = [
-      '[class*="Price-priceLarge"]',
-      'div[class*="money"]',
-      '[class*="CurrentPrice"]',
-      '[class*="priceLarge"]',
+      '[itemprop="price"]',
+      'meta[property="product:price:amount"]',
+      'meta[itemprop="price"]',
+      '[class*="Price-current"]',
     ];
 
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element) {
-        const text = element.textContent;
+        const text = element.content || element.getAttribute('content') || element.textContent;
         const price = extractNumericPrice(text);
         if (price) {
           console.log('ShopScraper: Newegg price found:', price);
@@ -501,16 +522,7 @@ function extractNeweggPrice() {
       }
     }
 
-    // Fallback: Search for price patterns
-    const pageText = document.body.innerText;
-    const prices = pageText.match(/\$\s*(\d+\.?\d{0,2})/g);
-    if (prices && prices.length > 0) {
-      const price = extractNumericPrice(prices[0]);
-      if (price && price > 50 && price < 10000) {
-        console.log('ShopScraper: Newegg price (fallback):', price);
-        return price;
-      }
-    }
+    console.log('ShopScraper: Newegg price not found with strict selectors');
   } catch (error) {
     console.error('ShopScraper: Newegg extraction error', error);
   }
@@ -523,18 +535,19 @@ function extractNeweggPrice() {
  */
 function extractTargetPrice() {
   try {
-    // Try Target price selectors
+    // Try only explicit product-price selectors on Target
     const selectors = [
-      '[data-testid="price"]',
-      '[class*="CellPrice"]',
-      '[class*="Price-module"]',
-      'span[class*="price"]',
+      '[data-test="product-price"]',
+      '[data-testid="product-price"]',
+      '[itemprop="price"]',
+      'meta[property="product:price:amount"]',
+      'meta[itemprop="price"]',
     ];
 
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element) {
-        const text = element.textContent;
+        const text = element.content || element.getAttribute('content') || element.textContent;
         const price = extractNumericPrice(text);
         if (price) {
           console.log('ShopScraper: Target price found:', price);
@@ -543,16 +556,7 @@ function extractTargetPrice() {
       }
     }
 
-    // Fallback: Search for price patterns
-    const pageText = document.body.innerText;
-    const prices = pageText.match(/\$\s*(\d+\.?\d{0,2})/g);
-    if (prices && prices.length > 0) {
-      const price = extractNumericPrice(prices[0]);
-      if (price && price > 50 && price < 10000) {
-        console.log('ShopScraper: Target price (fallback):', price);
-        return price;
-      }
-    }
+    console.log('ShopScraper: Target price not found with strict selectors');
   } catch (error) {
     console.error('ShopScraper: Target extraction error', error);
   }
@@ -565,18 +569,18 @@ function extractTargetPrice() {
  */
 function extractMicroCenterPrice() {
   try {
-    // Try Micro Center price selectors
+    // Try only explicit product-price selectors on Micro Center
     const selectors = [
-      '[class*="price"]',
-      '[id*="price"]',
-      'span[class*="Price"]',
-      'div[class*="actualPrice"]',
+      '[itemprop="price"]',
+      'meta[property="product:price:amount"]',
+      'meta[itemprop="price"]',
+      '[class*="actualPrice"]',
     ];
 
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element) {
-        const text = element.textContent;
+        const text = element.content || element.getAttribute('content') || element.textContent;
         const price = extractNumericPrice(text);
         if (price) {
           console.log('ShopScraper: Micro Center price found:', price);
@@ -585,16 +589,7 @@ function extractMicroCenterPrice() {
       }
     }
 
-    // Fallback: Search for price patterns
-    const pageText = document.body.innerText;
-    const prices = pageText.match(/\$\s*(\d+\.?\d{0,2})/g);
-    if (prices && prices.length > 0) {
-      const price = extractNumericPrice(prices[0]);
-      if (price && price > 50 && price < 10000) {
-        console.log('ShopScraper: Micro Center price (fallback):', price);
-        return price;
-      }
-    }
+    console.log('ShopScraper: Micro Center price not found with strict selectors');
   } catch (error) {
     console.error('ShopScraper: Micro Center extraction error', error);
   }
