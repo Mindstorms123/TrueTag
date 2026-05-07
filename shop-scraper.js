@@ -56,8 +56,8 @@ async function checkForPendingProductInfo() {
     console.log('ShopScraper: 📋 Showing price capture dialog');
     showPriceCaptureDialog(productInfo);
 
-    // Clear the stored info after showing dialog
-    await chrome.storage.local.remove('truetag_product_info');
+    // Don't clear immediately - let the panel persist until user saves or closes
+    // The panel will clear on successful save
   } catch (error) {
     console.error('ShopScraper: Error checking for product info', error);
   }
@@ -78,74 +78,285 @@ function getStoreDomain(store) {
  * Show dialog to capture price and confirm product
  */
 function showPriceCaptureDialog(productInfo) {
-  console.log('ShopScraper: Showing price capture dialog');
+  console.log('ShopScraper: Showing elegant price capture panel');
 
   // Extract price from page first
   const extractedPrice = extractPriceFromPage();
   console.log('ShopScraper: Extracted price from page:', extractedPrice);
 
-  // Step 1: Ask if this is the same product
-  const isSameProduct = confirm(
-    `Is this the same product?\n\n` +
-    `Product: ${productInfo.title}\n` +
-    `Amazon: $${(productInfo.amazonPrice || 0).toFixed(2)}\n\n` +
-    `Store: ${productInfo.store}`
-  );
-
-  if (!isSameProduct) {
-    console.log('ShopScraper: User declined product match');
-    return;
+  // Validate extracted price - only use if within reasonable range of Amazon price
+  let validatedPrice = null;
+  if (extractedPrice && productInfo.amazonPrice) {
+    const ratio = extractedPrice / productInfo.amazonPrice;
+    // Only accept prices between 50% and 200% of Amazon price
+    if (ratio >= 0.5 && ratio <= 2.0) {
+      validatedPrice = extractedPrice;
+      console.log(`ShopScraper: ✅ Extracted price validated (ratio: ${ratio.toFixed(2)})`);
+    } else {
+      console.log(`ShopScraper: ⚠️ Extracted price seems wrong (ratio: ${ratio.toFixed(2)}), ignoring`);
+    }
+  } else if (extractedPrice) {
+    // No Amazon price to compare, use extracted price but mark as uncertain
+    validatedPrice = extractedPrice;
+    console.log('ShopScraper: ⚠️ No Amazon price to validate against');
   }
 
-  // Step 2: Ask for price (with extracted price as default if available)
-  let price = null;
+  // Create shadow DOM container for elegant panel
+  const container = document.createElement('div');
+  container.id = 'truetag-price-panel';
+  container.setAttribute('data-truetag', 'true');
 
-  if (extractedPrice) {
-    // Price was extracted - ask for confirmation
-    const confirmed = confirm(
-      `Found price: $${extractedPrice.toFixed(2)}\n\n` +
-      `Is this correct?`
-    );
+  const shadowRoot = container.attachShadow({ mode: 'open' });
 
-    if (confirmed) {
-      price = extractedPrice;
-    } else {
-      // Ask user to enter manually
-      const input = prompt(
-        `Enter the price you see:\n` +
-        `(Example: 299.99)`,
-        extractedPrice.toFixed(2)
-      );
-      if (input) {
-        price = parseFloat(input);
+  // Add styles
+  const style = document.createElement('style');
+  style.textContent = `
+    :host {
+      --color-primary: #0f172a;
+      --color-accent: #10b981;
+      --color-text: #f1f5f9;
+      --color-border: #334155;
+    }
+
+    .truetag-panel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 380px;
+      max-width: calc(100vw - 40px);
+      background: rgba(15, 23, 42, 0.97);
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      box-shadow: 0 20px 35px rgba(0, 0, 0, 0.6);
+      z-index: 2147483647;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--color-text);
+      animation: slideInUp 400ms ease-out;
+    }
+
+    @keyframes slideInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
       }
     }
-  } else {
-    // No auto-extracted price, ask manually
-    const input = prompt(
-      `Enter the price you found at ${productInfo.store}:\n` +
-      `(Example: 299.99)`,
-      ''
-    );
-    if (input) {
-      price = parseFloat(input);
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
     }
-  }
 
-  if (!price || !Number.isFinite(price) || price <= 0) {
-    alert('❌ Invalid price. Could not save.');
-    return;
-  }
+    .panel-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.3px;
+      text-transform: uppercase;
+    }
 
-  // Step 3: Final confirmation
-  const saveConfirmed = confirm(
-    `Save this price?\n\n` +
-    `Store: ${productInfo.store}\n` +
-    `Price: $${price.toFixed(2)}\n` +
-    `Product: ${productInfo.title}`
-  );
+    .panel-close {
+      background: none;
+      border: none;
+      color: #cbd5e1;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-  if (saveConfirmed) {
+    .panel-close:hover {
+      color: var(--color-text);
+    }
+
+    .product-info {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+      border: 1px solid #065f46;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .product-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .product-price {
+      color: #86efac;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .amazon-price {
+      color: #64748b;
+      font-size: 11px;
+    }
+
+    .price-input-group {
+      margin-bottom: 12px;
+    }
+
+    .price-label {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: block;
+      color: #cbd5e1;
+    }
+
+    .price-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: #1e293b;
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 600;
+      box-sizing: border-box;
+    }
+
+    .price-input:focus {
+      outline: none;
+      border-color: var(--color-accent);
+      background: #273548;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 200ms ease;
+    }
+
+    .btn-confirm {
+      background: var(--color-accent);
+      color: #082f1d;
+    }
+
+    .btn-confirm:hover {
+      background: #059669;
+    }
+
+    .btn-cancel {
+      background: #334155;
+      color: var(--color-text);
+    }
+
+    .btn-cancel:hover {
+      background: #475569;
+    }
+
+    .status-message {
+      font-size: 12px;
+      padding: 8px;
+      border-radius: 6px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .status-success {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid #065f46;
+      color: #86efac;
+    }
+
+    .status-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid #7f1d1d;
+      color: #fca5a5;
+    }
+  `;
+
+  // Build HTML
+  const panel = document.createElement('div');
+  panel.className = 'truetag-panel';
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">✓ TrueTag</div>
+      <button class="panel-close" id="panel-close">×</button>
+    </div>
+
+    <div class="product-info">
+      <div class="product-title">${productInfo.title}</div>
+      <div class="product-price">Store: ${productInfo.store}</div>
+      <div class="amazon-price">Amazon: $${(productInfo.amazonPrice || 0).toFixed(2)}</div>
+    </div>
+
+    <div id="status-message"></div>
+
+    <div class="price-input-group">
+      <label class="price-label">Did you find this product? Enter the price:</label>
+      <input 
+        type="number" 
+        id="price-input" 
+        class="price-input" 
+        placeholder="e.g. 299.99"
+        value="${validatedPrice ? validatedPrice.toFixed(2) : ''}"
+        step="0.01"
+        min="0"
+      >
+    </div>
+
+    <div class="button-group">
+      <button id="btn-confirm" class="btn btn-confirm">✓ Yes, Save</button>
+      <button id="btn-cancel" class="btn btn-cancel">✗ Cancel</button>
+    </div>
+  `;
+
+  shadowRoot.appendChild(style);
+  shadowRoot.appendChild(panel);
+
+  // Event listeners
+  const closeBtn = shadowRoot.getElementById('panel-close');
+  const confirmBtn = shadowRoot.getElementById('btn-confirm');
+  const cancelBtn = shadowRoot.getElementById('btn-cancel');
+  const priceInput = shadowRoot.getElementById('price-input');
+  const statusMsg = shadowRoot.getElementById('status-message');
+
+  closeBtn.addEventListener('click', () => {
+    container.remove();
+    clearProductInfo();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+      clearProductInfo();
+    container.remove();
+  });
+
+  confirmBtn.addEventListener('click', async () => {
+    const price = parseFloat(priceInput.value);
+
+    if (!price || !Number.isFinite(price) || price <= 0) {
+      showStatus(statusMsg, '❌ Please enter a valid price', 'error');
+      return;
+    }
+
+    // Disable button during save
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '⏳ Saving...';
+
     // Send message to background to save price
     chrome.runtime.sendMessage(
       {
@@ -156,19 +367,49 @@ function showPriceCaptureDialog(productInfo) {
       (response) => {
         if (chrome.runtime.lastError) {
           console.error('ShopScraper: Message error', chrome.runtime.lastError);
-          alert('❌ Error saving price');
+          showStatus(statusMsg, '❌ Error saving price', 'error');
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '✓ Yes, Save';
           return;
         }
 
         if (response.success) {
           console.log('ShopScraper: Price saved successfully');
-          alert(`✅ Price saved for ${productInfo.store}!`);
+          showStatus(statusMsg, `✅ Price saved for ${productInfo.store}!`, 'success');
+          
+          // Close after 2 seconds
+          setTimeout(() => {
+                        clearProductInfo();
+            container.remove();
+          }, 2000);
         } else {
           console.error('ShopScraper: Save failed', response.error);
-          alert(`❌ Failed to save: ${response.error}`);
+          showStatus(statusMsg, `❌ Error: ${response.error}`, 'error');
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '✓ Yes, Save';
         }
       }
     );
+  });
+
+  document.body.appendChild(container);
+}
+
+function showStatus(element, message, type) {
+  const status = document.createElement('div');
+  status.className = `status-message status-${type}`;
+  status.textContent = message;
+  
+  element.innerHTML = '';
+  element.appendChild(status);
+}
+
+async function clearProductInfo() {
+  try {
+    await chrome.storage.local.remove('truetag_product_info');
+    console.log('ShopScraper: Cleared product info from storage');
+  } catch (error) {
+    console.error('ShopScraper: Error clearing product info', error);
   }
 }
 
@@ -380,3 +621,10 @@ function extractNumericPrice(text) {
 }
 
 console.log('ShopScraper: Content script loaded');
+// Persist check every 2 seconds to handle navigations within the shop
+setInterval(() => {
+  // Only check if no panel is currently shown
+  if (!document.getElementById('truetag-price-panel')) {
+    checkForPendingProductInfo();
+  }
+}, 2000);
