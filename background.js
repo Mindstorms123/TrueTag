@@ -11,6 +11,8 @@
 import CompetitorFetcher from './competitor-fetcher.js';
 import CONFIG from './config.js';
 
+console.log('TrueTag Background: Imports loaded successfully');
+
 class BackgroundWorker {
   constructor() {
     this.priceCache = new Map();

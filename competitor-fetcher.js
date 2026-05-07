@@ -18,6 +18,54 @@ class CompetitorFetcher {
     return Math.round(parsed * 100) / 100;
   }
 
+  /**
+   * Generate optimized search query - prefer model number, fall back to shortened title
+   * @private
+   */
+  static generateSearchQuery(productTitle, modelNumber) {
+    // Model number is most specific - use it first
+    if (modelNumber && modelNumber.length > 3) {
+      return modelNumber;
+    }
+
+    // Otherwise use first 2-3 key words from title (e.g. "Google Pixel 10" instead of full title)
+    if (productTitle) {
+      const words = productTitle
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !w.includes('-') && !w.includes(','))
+        .slice(0, 3)
+        .join(' ');
+      return words || productTitle;
+    }
+
+    return productTitle;
+  }
+
+  /**
+   * Validate that found product title matches the original product
+   * Check if key brand + model words appear in found title (more lenient)
+   * @private
+   */
+  static isValidProductMatch(originalTitle, foundTitle) {
+    if (!originalTitle || !foundTitle) return false;
+
+    // Get first 2-3 key words from original (usually brand + model)
+    const keywords = originalTitle
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !w.includes('-') && !w.includes(','))
+      .slice(0, 3)
+      .map(word => word.toLowerCase());
+
+    const foundTitleLower = foundTitle.toLowerCase();
+
+    // Check if at least 2 key keywords appear (more lenient)
+    const matchCount = keywords.filter(keyword => foundTitleLower.includes(keyword)).length;
+    
+    console.log(`CompetitorFetcher: Product match - keywords: [${keywords.join(', ')}] / matches: ${matchCount}/2 / found: "${foundTitle}"`);
+    
+    // Need at least 2 matches (e.g. "google" AND "pixel") OR exact modelNumber match
+    return matchCount >= 2;
+
   static normalizeBestBuyUrl(pathOrUrl) {
     if (!pathOrUrl) {
       return null;
@@ -32,6 +80,23 @@ class CompetitorFetcher {
     }
 
     return `https://www.bestbuy.com/${pathOrUrl}`;
+  }
+
+  static extractBestBuyProductTitle(html) {
+    const patterns = [
+      /"title"\s*:\s*"([^"]+)"/i,
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      /<title[^>]*>([^<]+)<\/title>/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) {
+        return match[1].trim();
+      }
+    }
+
+    return null;
   }
 
   static extractBestBuyPrice(html) {
@@ -90,6 +155,24 @@ class CompetitorFetcher {
       }
     }
 
+    return null;
+  }
+
+  static extractJsonLdProductTitle(html) {
+    const scripts = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi) || [];
+    for (const script of scripts) {
+      const jsonText = script
+        .replace(/<script[^>]*>/i, '')
+        .replace(/<\/script>/i, '')
+        .trim();
+      try {
+        const json = JSON.parse(jsonText);
+        if (json.name) return json.name;
+        if (json.Product?.name) return json.Product.name;
+      } catch (e) {
+        // Continue
+      }
+    }
     return null;
   }
 
@@ -195,18 +278,27 @@ class CompetitorFetcher {
 
     for (const competitor of competitors) {
       try {
-        const price = await this.fetchCompetitorPrice(
-          competitor,
-          productTitle,
-          modelNumber
+        console.log(`CompetitorFetcher: Starting fetch for ${competitor}...`);
+        
+        // Add 10 second timeout per competitor
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Timeout after 10s`)), 10000)
         );
+        
+        const price = await Promise.race([
+          this.fetchCompetitorPrice(competitor, productTitle, modelNumber),
+          timeoutPromise
+        ]);
+        
+        console.log(`CompetitorFetcher: Got result for ${competitor}:`, price);
         results[competitor] = price;
       } catch (error) {
-        console.error(`Failed to fetch price from ${competitor}:`, error);
+        console.error(`CompetitorFetcher: Failed to fetch price from ${competitor}:`, error.message);
         results[competitor] = null;
       }
     }
 
+    console.log('CompetitorFetcher: All competitors fetched, returning:', results);
     return results;
   }
 
@@ -237,7 +329,7 @@ class CompetitorFetcher {
    * @private
    */
   static async fetchBestBuyPrice(productTitle, modelNumber) {
-    const searchQuery = modelNumber || productTitle;
+    const searchQuery = this.generateSearchQuery(productTitle, modelNumber);
     const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(
       searchQuery
     )}`;
@@ -261,6 +353,13 @@ class CompetitorFetcher {
         return null;
       }
 
+      // Extract product title and validate it matches the original product
+      const foundTitle = this.extractBestBuyProductTitle(html);
+      if (!this.isValidProductMatch(productTitle, foundTitle)) {
+        console.log(`CompetitorFetcher: Best Buy product mismatch - expected "${productTitle}" but found "${foundTitle}"`);
+        return null;
+      }
+
       const productUrl = this.extractBestBuyProductUrl(html, searchUrl);
 
       return {
@@ -281,7 +380,7 @@ class CompetitorFetcher {
    * @private
    */
   static async fetchNeweggPrice(productTitle, modelNumber) {
-    const searchQuery = modelNumber || productTitle;
+    const searchQuery = this.generateSearchQuery(productTitle, modelNumber);
     const searchUrl = `https://www.newegg.com/p/pl?d=${encodeURIComponent(searchQuery)}`;
 
     try {
@@ -310,6 +409,13 @@ class CompetitorFetcher {
 
       const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
       if (price === null) {
+        return null;
+      }
+
+      // Extract and validate product title for Newegg
+      const foundTitle = this.extractJsonLdProductTitle(html);
+      if (foundTitle && !this.isValidProductMatch(productTitle, foundTitle)) {
+        console.log(`CompetitorFetcher: Newegg product mismatch - expected "${productTitle}" but found "${foundTitle}"`);
         return null;
       }
 
@@ -345,7 +451,7 @@ class CompetitorFetcher {
    * @private
    */
   static async fetchTargetPrice(productTitle, modelNumber) {
-    const searchQuery = modelNumber || productTitle;
+    const searchQuery = this.generateSearchQuery(productTitle, modelNumber);
     const searchUrl = `https://www.target.com/s?searchTerm=${encodeURIComponent(searchQuery)}`;
 
     try {
@@ -370,6 +476,13 @@ class CompetitorFetcher {
 
       const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
       if (price === null) {
+        return null;
+      }
+
+      // Extract and validate product title for Target
+      const foundTitle = this.extractJsonLdProductTitle(html);
+      if (foundTitle && !this.isValidProductMatch(productTitle, foundTitle)) {
+        console.log(`CompetitorFetcher: Target product mismatch - expected "${productTitle}" but found "${foundTitle}"`);
         return null;
       }
 
@@ -401,7 +514,7 @@ class CompetitorFetcher {
    * @private
    */
   static async fetchMicroCenterPrice(productTitle, modelNumber) {
-    const searchQuery = modelNumber || productTitle;
+    const searchQuery = this.generateSearchQuery(productTitle, modelNumber);
     const searchUrl = `https://www.microcenter.com/search/search_results.aspx?searchterm=${encodeURIComponent(
       searchQuery
     )}`;
@@ -428,6 +541,13 @@ class CompetitorFetcher {
 
       const price = this.extractFirstPriceByPatterns(html, pricePatterns) || this.extractJsonLdProductPrice(html);
       if (price === null) {
+        return null;
+      }
+
+      // Extract and validate product title for Micro Center
+      const foundTitle = this.extractJsonLdProductTitle(html);
+      if (foundTitle && !this.isValidProductMatch(productTitle, foundTitle)) {
+        console.log(`CompetitorFetcher: Micro Center product mismatch - expected "${productTitle}" but found "${foundTitle}"`);
         return null;
       }
 
