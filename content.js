@@ -242,7 +242,25 @@ class OverlayUI {
       'line-height:1.35',
     ].join(';');
 
-    // Build shop links HTML
+    // Add styles for buttons
+    const style = document.createElement('style');
+    style.textContent = `
+      #truetag-overlay a {
+        transition: all 200ms ease !important;
+      }
+      #truetag-overlay a:hover {
+        background: #334155 !important;
+        border-color: #64748b !important;
+      }
+      .truetag-found-btn {
+        transition: all 200ms ease !important;
+      }
+      .truetag-found-btn:hover {
+        background: #059669 !important;
+      }
+    `;
+
+    // Build shop links HTML - simple clickable links only
     const shopLinks = uiData.shopLinks || {};
     const shopLinksHTML = Object.entries(shopLinks)
       .map(([storeName, linkData]) => {
@@ -252,9 +270,9 @@ class OverlayUI {
             href="${linkData.url}" 
             target="_blank" 
             rel="noopener noreferrer"
-            style="display:block;margin-top:10px;padding:12px;border-radius:8px;background:#1e293b;border:1px solid #475569;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:600;transition:all 200ms ease;text-align:center;"
-            onmouseover="this.style.background='#334155'; this.style.borderColor='#64748b';"
-            onmouseout="this.style.background='#1e293b'; this.style.borderColor='#475569';"
+            class="truetag-shop-link"
+            data-store="${linkData.store}"
+            style="display:block;margin-top:10px;padding:12px;border-radius:8px;background:#1e293b;border:1px solid #475569;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:600;text-align:center;"
           >
             🔍 Compare at ${linkData.store}
           </a>
@@ -277,16 +295,44 @@ class OverlayUI {
       </div>
 
       <div style="margin-top:14px;padding:12px;background:#1a1f3a;border-radius:8px;border:1px solid #334155;">
-        <div style="font-size:12px;font-weight:600;color:#cbd5e1;margin-bottom:10px;">📊 Compare at other retailers:</div>
+        <div style="font-size:12px;font-weight:600;color:#cbd5e1;margin-bottom:10px;">📊 Check other retailers:</div>
         ${shopLinksHTML}
       </div>
 
       <div style="margin-top:10px;text-align:center;font-size:11px;color:#64748b;">
-        Click a link to search for this product and check prices
+        Click store → find product → click "Found" button
       </div>
     `;
 
+    overlay.appendChild(style);
+
+    // Close button
     overlay.querySelector('#truetag-close')?.addEventListener('click', () => overlay.remove());
+
+    // Shop links - save product info when clicked
+    overlay.querySelectorAll('.truetag-shop-link').forEach(link => {
+      link.addEventListener('click', async (e) => {
+        const store = e.target.dataset.store;
+        console.log(`TrueTag: User clicked link for ${store}`);
+
+        const productInfo = {
+          title: uiData.title,
+          modelNumber: uiData.modelNumber,
+          amazonPrice: uiData.amazonPrice,
+          store: store,
+          timestamp: Date.now(),
+        };
+
+        try {
+          // Save to storage so shop-scraper.js can access it
+          await chrome.storage.local.set({ 'truetag_product_info': productInfo });
+          console.log(`TrueTag: Saved product info for ${store}:`, productInfo);
+        } catch (error) {
+          console.error(`TrueTag: Failed to save product info`, error);
+        }
+      });
+    });
+
     document.body.appendChild(overlay);
   }
 }
@@ -430,15 +476,13 @@ class TrueTagContentScript {
     // Log links to console for debugging
     console.log('TrueTag: Competitor Links:', shopLinks);
     
-    // Show overlay with shop links and save price options
-    const uiData = {
+    // Return UI data
+    return {
       title: this.productData.title,
+      modelNumber: this.productData.modelNumber,
       amazonPrice: amazonPrice,
-      message: 'Compare prices at other retailers',
       shopLinks: shopLinks,
     };
-
-    OverlayUI.inject(uiData);
   }
 
   async savePriceIfConfirmed(store, price) {
@@ -463,6 +507,53 @@ class TrueTagContentScript {
         console.error(`TrueTag: Failed to save ${store} price`, error);
         alert(`❌ Failed to save price: ${error.message}`);
       }
+    }
+  }
+
+  async askForPriceAndSave(store) {
+    console.log(`TrueTag: User clicked Found for ${store}`);
+    
+    // Step 1: Ask if user wants to save
+    const shouldSave = confirm(
+      `Ready to save price for ${store}?\n\n` +
+      `${this.productData.title}\n` +
+      `Amazon: $${(this.productData.price || 0).toFixed(2)}\n\n` +
+      `Click OK to open ${store} in new tab.\n` +
+      `The dialog will appear on the shop page.`
+    );
+
+    if (!shouldSave) {
+      console.log(`TrueTag: User declined ${store}`);
+      return;
+    }
+
+    // Store product info for the shop page
+    const productInfo = {
+      title: this.productData.title,
+      modelNumber: this.productData.modelNumber,
+      amazonPrice: this.productData.price,
+      store: store,
+      timestamp: Date.now(),
+    };
+
+    try {
+      // Save to chrome.storage.local so shop-scraper.js can access it
+      await chrome.storage.local.set({ 'truetag_product_info': productInfo });
+      console.log(`TrueTag: Saved product info to session:`, productInfo);
+
+      // Ask background to open shop link in new tab
+      const shopLinks = this.competitorPrices[store.toLowerCase()] || {};
+      if (shopLinks.url) {
+        chrome.runtime.sendMessage({
+          type: 'OPEN_SHOP_TAB',
+          url: shopLinks.url,
+          store: store,
+        });
+        console.log(`TrueTag: Sent message to open ${store}`);
+      }
+    } catch (error) {
+      console.error(`TrueTag: Failed to save product info`, error);
+      alert(`❌ Error: Could not prepare shop tab`);
     }
   }
 

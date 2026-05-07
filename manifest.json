@@ -32,6 +32,18 @@
         "content.js"
       ],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://www.bestbuy.com/*",
+        "*://www.newegg.com/*",
+        "*://www.target.com/*",
+        "*://www.microcenter.com/*"
+      ],
+      "js": [
+        "shop-scraper.js"
+      ],
+      "run_at": "document_end"
     }
   ],
   "background": {

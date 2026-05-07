@@ -73,8 +73,72 @@ class BackgroundWorker {
         return;
       }
 
+      // Extract price from current active tab (shop pages)
+      if (request.type === 'EXTRACT_PRICE_FROM_TAB') {
+        try {
+          this.extractPriceFromCurrentTab().then((price) => {
+            sendResponse({ price: price });
+          });
+        } catch (error) {
+          console.error('Background: Price extraction error', error);
+          sendResponse({ price: null });
+        }
+        return;
+      }
+
+      // Save competitor price from shop page
+      if (request.type === 'SAVE_COMPETITOR_PRICE') {
+        try {
+          this.handleSaveCompetitorPrice(request, sendResponse);
+        } catch (error) {
+          console.error('Background: Error saving competitor price', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        return true; // Keep channel open for async
+      }
+
       sendResponse({ error: 'Unknown request type' });
     });
+  }
+
+  async handleSaveCompetitorPrice(request, sendResponse) {
+    try {
+      const { productInfo, price } = request;
+
+      if (!productInfo || !productInfo.modelNumber || !productInfo.store || !price) {
+        sendResponse({ success: false, error: 'Missing required data' });
+        return;
+      }
+
+      console.log(`Background: Saving competitor price for ${productInfo.store}: $${price}`);
+
+      // Call Edge Function to insert price
+      const response = await fetch(CONFIG.supabase.writeEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CONFIG.supabase.anonKey}`,
+        },
+        body: JSON.stringify({
+          model_number: productInfo.modelNumber,
+          store: productInfo.store,
+          price: price,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Edge Function error: ${response.status} - ${errorData}`);
+      }
+
+      const data = await response.json();
+      console.log(`Background: Price saved successfully`, data);
+
+      sendResponse({ success: true, data: data });
+    } catch (error) {
+      console.error('Background: Failed to save competitor price', error);
+      sendResponse({ success: false, error: error.message });
+    }
   }
 
   getSupabaseHeaders() {
@@ -224,6 +288,58 @@ class BackgroundWorker {
       data: prices,
       timestamp: Date.now(),
     });
+  }
+
+  /**
+   * Extract price from current active tab (shop pages)
+   * Tries to find price from Best Buy, Newegg, Target, or Micro Center pages
+   * @private
+   */
+  async extractPriceFromCurrentTab() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || !tab.id) return null;
+
+      const url = tab.url || '';
+      console.log('Background: Trying to extract price from:', url);
+
+      // Check if tab is on a shop site
+      const isShopSite = 
+        url.includes('bestbuy.com') ||
+        url.includes('newegg.com') ||
+        url.includes('target.com') ||
+        url.includes('microcenter.com');
+
+      if (!isShopSite) {
+        console.log('Background: Tab is not on a shop site');
+        return null;
+      }
+
+      // Send message to shop-scraper content script
+      return new Promise((resolve) => {
+        chrome.tabs.sendMessage(
+          tab.id,
+          { type: 'EXTRACT_PRICE' },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.warn('Background: Content script not responding', chrome.runtime.lastError.message);
+              resolve(null);
+              return;
+            }
+
+            if (response && response.price) {
+              console.log('Background: Extracted price:', response.price);
+              resolve(response.price);
+            } else {
+              resolve(null);
+            }
+          }
+        );
+      });
+    } catch (error) {
+      console.error('Background: Price extraction error', error);
+      return null;
+    }
   }
 
   /**

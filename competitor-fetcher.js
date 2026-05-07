@@ -19,21 +19,25 @@ class CompetitorFetcher {
   }
 
   /**
-   * Generate optimized search query - prefer model number, fall back to shortened title
+   * Generate optimized search query - use product title, ignore model number
    * @private
    */
   static generateSearchQuery(productTitle, modelNumber) {
-    // Model number is most specific - use it first
-    if (modelNumber && modelNumber.length > 3) {
-      return modelNumber;
-    }
-
-    // Otherwise use first 2-3 key words from title (e.g. "Google Pixel 10" instead of full title)
+    // Always use product title - it's most reliable across retailers
+    // (Model numbers from Amazon won't work on other sites)
     if (productTitle) {
+      // Extract first 4 key words for best search results
+      // Keep numbers like "10", "5", "8" which are important for product identification
+      // e.g. "Google Pixel 10 - Unlocked..." → "Google Pixel 10"
       const words = productTitle
         .split(/\s+/)
-        .filter(w => w.length > 2 && !w.includes('-') && !w.includes(','))
-        .slice(0, 3)
+        .filter(w => {
+          // Keep words that are:
+          // - 2+ characters long (including numbers like "10", "5", "4K")
+          // - Not starting with special chars or dashes
+          return w.length >= 2 && !w.match(/^[-\(]/);
+        })
+        .slice(0, 4) // Take up to 4 words instead of 3
         .join(' ');
       return words || productTitle;
     }
