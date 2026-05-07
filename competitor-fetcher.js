@@ -42,6 +42,55 @@ class CompetitorFetcher {
   }
 
   /**
+   * Generate direct search links to competitor stores
+   * User can click to see real prices - more reliable than scraping
+   * @public
+   */
+  static generateCompetitorLinks(productTitle, modelNumber) {
+    const searchTerm = this.generateSearchQuery(productTitle, modelNumber);
+    
+    return {
+      bestbuy: `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchTerm)}`,
+      newegg: `https://www.newegg.com/p/pl?d=${encodeURIComponent(searchTerm)}`,
+      target: `https://www.target.com/s?searchTerm=${encodeURIComponent(searchTerm)}`,
+      microcenter: `https://www.microcenter.com/search/search_results.aspx?searchterm=${encodeURIComponent(searchTerm)}`,
+    };
+  }
+
+  /**
+   * Fetch competitor shop links (instead of scraping)
+   * Returns clickable links for user to check prices directly
+   * @public
+   */
+  static async getCompetitorLinks(productTitle, modelNumber) {
+    console.log(`CompetitorFetcher: Generating shop links for "${productTitle}"`);
+    
+    const links = this.generateCompetitorLinks(productTitle, modelNumber);
+    
+    const results = {
+      bestbuy: {
+        store: 'Best Buy',
+        url: links.bestbuy,
+      },
+      newegg: {
+        store: 'Newegg',
+        url: links.newegg,
+      },
+      target: {
+        store: 'Target',
+        url: links.target,
+      },
+      microcenter: {
+        store: 'Micro Center',
+        url: links.microcenter,
+      },
+    };
+    
+    console.log(`CompetitorFetcher: Generated ${Object.keys(results).length} shop links`);
+    return results;
+  }
+
+  /**
    * Validate that found product title matches the original product
    * Check if key brand + model words appear in found title (more lenient)
    * @private
@@ -65,6 +114,7 @@ class CompetitorFetcher {
     
     // Need at least 2 matches (e.g. "google" AND "pixel") OR exact modelNumber match
     return matchCount >= 2;
+  }
 
   static normalizeBestBuyUrl(pathOrUrl) {
     if (!pathOrUrl) {

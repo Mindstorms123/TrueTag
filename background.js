@@ -163,40 +163,25 @@ class BackgroundWorker {
 
   /**
    * Handle competitor price fetch request
+   * Returns direct shop search links instead of scraping
    * @private
    */
   async handleCompetitorPriceFetch(request, sendResponse) {
     try {
-      const cacheKey = this.generateCacheKey(request.productTitle, request.modelNumber);
-      const cachedPrices = this.getCachedPrices(cacheKey);
-
-      // Return cached prices if available
-      if (cachedPrices) {
-        if (CONFIG.debug) {
-          console.log('Background: Returning cached prices', cachedPrices);
-        }
-        sendResponse({ competitorPrices: cachedPrices });
-        return;
-      }
-
-      // Fetch fresh prices from competitors
       console.log(
-        'Background: Fetching prices for',
+        'Background: Generating competitor shop links for',
         request.productTitle,
         request.modelNumber
       );
 
-      const competitorPrices = await CompetitorFetcher.fetchAllCompetitors(
+      const competitorLinks = await CompetitorFetcher.getCompetitorLinks(
         request.productTitle,
         request.modelNumber
       );
 
-      // Cache the results
-      this.setCachedPrices(cacheKey, competitorPrices);
-
-      sendResponse({ competitorPrices: competitorPrices });
+      sendResponse({ competitorPrices: competitorLinks });
     } catch (error) {
-      console.error('Background: Error fetching competitor prices', error);
+      console.error('Background: Error generating competitor links', error);
       sendResponse({ error: error.message });
     }
   }

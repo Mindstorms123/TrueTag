@@ -230,73 +230,60 @@ class OverlayUI {
       'right:20px',
       'bottom:20px',
       'z-index:2147483647',
-      'width:340px',
-      'max-width:calc(100vw - 20px)',
+      'width:360px',
+      'max-width:calc(100vw - 40px)',
       'font-family:Inter, Segoe UI, system-ui, sans-serif',
       'background:rgba(15,23,42,0.97)',
       'color:#f1f5f9',
       'border:1px solid #334155',
       'border-radius:14px',
       'box-shadow:0 20px 35px rgba(0,0,0,0.45)',
-      'padding:14px',
+      'padding:16px',
       'line-height:1.35',
     ].join(';');
 
-    const savings = Math.max(0, (uiData.amazonPrice || 0) - (uiData.bestPrice?.price || 0));
-    const badgeText = uiData.priceHistory?.isGoodDeal
-      ? `Great Deal: ${uiData.priceHistory.dealDescription || 'below 30-day average'}`
-      : 'Price History Available';
-    const dealUrl = uiData.bestPrice?.url || '';
-    const isBestCurrentPrice = !!uiData.isBestCurrentPrice;
-    const isCompetitorCheckUnverified = !!uiData.isCompetitorCheckUnverified;
-    const isPriceIdentical = !!uiData.isPriceIdentical;
-    const identicalStore = uiData.identicalStore || 'another retailer';
-    const verifiedCompetitorCount = uiData.verifiedCompetitorCount || 0;
-    const expectedCheckedStoreCount = uiData.expectedCheckedStoreCount || 4;
-    const isComparisonPartial = !!uiData.isComparisonPartial;
-    const dealButtonMarkup = !isBestCurrentPrice
-      ? `
-      <div style="margin-top:12px;display:flex;gap:8px;">
-        <a
-          href="${dealUrl}"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="${dealUrl
-            ? 'display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:9px;background:#10b981;color:#062b1c;text-decoration:none;font-weight:700;font-size:12px;'
-            : 'display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:9px;background:#334155;color:#94a3b8;text-decoration:none;font-weight:700;font-size:12px;pointer-events:none;'}"
-        >
-          ${dealUrl ? 'View Deal' : 'No Link Available'}
-        </a>
-      </div>
-    `
-      : '';
+    // Build shop links HTML
+    const shopLinks = uiData.shopLinks || {};
+    const shopLinksHTML = Object.entries(shopLinks)
+      .map(([storeName, linkData]) => {
+        if (!linkData || !linkData.url) return '';
+        return `
+          <a 
+            href="${linkData.url}" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style="display:block;margin-top:10px;padding:12px;border-radius:8px;background:#1e293b;border:1px solid #475569;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:600;transition:all 200ms ease;text-align:center;"
+            onmouseover="this.style.background='#334155'; this.style.borderColor='#64748b';"
+            onmouseout="this.style.background='#1e293b'; this.style.borderColor='#475569';"
+          >
+            🔍 Compare at ${linkData.store}
+          </a>
+        `;
+      })
+      .join('');
 
     overlay.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px;">
-          <span style="display:inline-flex;width:20px;height:20px;border-radius:6px;background:#10b981;color:#082f1d;align-items:center;justify-content:center;font-size:12px;">T</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px;font-size:14px;">
+          <span style="display:inline-flex;width:20px;height:20px;border-radius:6px;background:#10b981;color:#082f1d;align-items:center;justify-content:center;font-size:12px;font-weight:800;">T</span>
           <span>TrueTag</span>
         </div>
-        <button id="truetag-close" style="background:transparent;border:0;color:#cbd5e1;font-size:18px;cursor:pointer;">×</button>
+        <button id="truetag-close" style="background:transparent;border:0;color:#cbd5e1;font-size:20px;cursor:pointer;padding:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">×</button>
       </div>
-      <div style="margin-top:12px;padding:12px;border:1px solid #065f46;border-radius:10px;background:linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.05));">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;">${isBestCurrentPrice ? 'Current Best Price' : 'Best Alternative Price'}</div>
-        <div style="margin-top:4px;font-size:15px;">
-          ${isCompetitorCheckUnverified
-            ? `Current best seen: <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> on Amazon (competitor check not yet verified).`
-            : isPriceIdentical
-            ? `Best verified price is <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> (same price at ${identicalStore}).`
-            : isBestCurrentPrice
-            ? `Best verified price is <strong>$${(uiData.amazonPrice || 0).toFixed(2)}</strong> on Amazon.`
-            : `Found for <strong>$${(uiData.bestPrice?.price ?? 0).toFixed(2)}</strong> at ${uiData.bestPrice?.store || 'Unknown'}`}
-        </div>
-        ${!isCompetitorCheckUnverified && isComparisonPartial ? `<div style="margin-top:6px;color:#93c5fd;font-size:12px;">Comparable stores: ${verifiedCompetitorCount}/${expectedCheckedStoreCount}</div>` : ''}
-        ${!isBestCurrentPrice && !isCompetitorCheckUnverified && !isPriceIdentical && savings > 0 ? `<div style="margin-top:6px;color:#34d399;font-weight:700;">Save $${savings.toFixed(2)}</div>` : ''}
+      
+      <div style="padding:12px;border:1px solid #065f46;border-radius:10px;background:linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.05));">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86efac;margin-bottom:4px;">Amazon Price</div>
+        <div style="font-size:24px;font-weight:700;color:#10b981;">$${(uiData.amazonPrice || 0).toFixed(2)}</div>
       </div>
-      <div style="margin-top:10px;display:inline-block;padding:7px 10px;border-radius:999px;border:1px solid #14532d;background:rgba(22,163,74,.12);color:#bbf7d0;font-size:12px;font-weight:600;">
-        ${badgeText}
+
+      <div style="margin-top:14px;padding:12px;background:#1a1f3a;border-radius:8px;border:1px solid #334155;">
+        <div style="font-size:12px;font-weight:600;color:#cbd5e1;margin-bottom:10px;">📊 Compare at other retailers:</div>
+        ${shopLinksHTML}
       </div>
-      ${dealButtonMarkup}
+
+      <div style="margin-top:10px;text-align:center;font-size:11px;color:#64748b;">
+        Click a link to search for this product and check prices
+      </div>
     `;
 
     overlay.querySelector('#truetag-close')?.addEventListener('click', () => overlay.remove());
@@ -436,117 +423,47 @@ class TrueTagContentScript {
   }
 
   processDataForUI() {
-    let bestPrice = null;
-    let bestPriceDifference = 0;
-    let verifiedCompetitorCount = 0;
-    const expectedCheckedStoreCount = Object.keys(this.competitorPrices || {}).length || 4;
+    // Get competitor shop links
+    const shopLinks = this.competitorPrices || {};
     const amazonPrice = Number.parseFloat(this.productData.price || 0);
-    const minRatio = this.config.priceHistory?.minComparablePriceRatio ?? 0.7;
-    const maxRatio = this.config.priceHistory?.maxComparablePriceRatio ?? 1.6;
-
-    for (const priceData of Object.values(this.competitorPrices || {})) {
-      if (priceData?.verified !== true) continue;
-      if (!priceData?.price) continue;
-      const price = Number.parseFloat(priceData.price);
-      if (!Number.isFinite(price)) continue;
-
-      const ratio = amazonPrice > 0 ? price / amazonPrice : 1;
-      if (ratio < minRatio || ratio > maxRatio) {
-        // Parsed result looks like a likely mismatch (different product/variant/accessory).
-        continue;
-      }
-
-      verifiedCompetitorCount += 1;
-
-      if (!bestPrice || price < bestPrice.price) {
-        bestPrice = { store: priceData.store, price, url: priceData.url || '' };
-        bestPriceDifference = (this.productData.price || 0) - price;
-      }
-    }
-
-    const hasVerifiedCompetitorPrice = !!bestPrice;
-    const normalizedDelta = Math.round(bestPriceDifference * 100) / 100;
-    const hasCheaperCompetitor = !!bestPrice && normalizedDelta >= 0.01;
-    const isEqualPrice = !!bestPrice && Math.abs(normalizedDelta) < 0.01;
-    const isComparisonPartial = verifiedCompetitorCount < expectedCheckedStoreCount;
-    let isBestCurrentPrice = false;
-    let isCompetitorCheckUnverified = false;
-    let isPriceIdentical = false;
-    let identicalStore = '';
-
-    if (!bestPrice && this.config.ui?.forceShowForTesting) {
-      const syntheticPrice = Math.max(0, (this.productData.price || 0) - 25);
-      bestPrice = {
-        store: 'Best Buy (test mode)',
-        price: syntheticPrice,
-        url: `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(
-          this.productData.modelNumber || this.productData.title || ''
-        )}`,
-      };
-      bestPriceDifference = (this.productData.price || 0) - syntheticPrice;
-    }
-
-    if (!hasVerifiedCompetitorPrice && !this.config.ui?.forceShowForTesting) {
-      isCompetitorCheckUnverified = true;
-      bestPrice = {
-        store: 'Unavailable',
-        price: this.productData.price,
-        url: '',
-      };
-      bestPriceDifference = 0;
-    } else if (isEqualPrice && !this.config.ui?.forceShowForTesting) {
-      isBestCurrentPrice = true;
-      isPriceIdentical = true;
-      identicalStore = bestPrice?.store || '';
-      bestPrice = {
-        store: 'Amazon',
-        price: this.productData.price,
-        url: this.productData.currentUrl,
-      };
-      bestPriceDifference = 0;
-    } else if (!hasCheaperCompetitor && !this.config.ui?.forceShowForTesting) {
-      isBestCurrentPrice = true;
-      bestPrice = {
-        store: 'Amazon',
-        price: this.productData.price,
-        url: this.productData.currentUrl,
-      };
-      bestPriceDifference = 0;
-    }
-
-    let isGoodDeal = false;
-    let dealDescription = '';
-
-    if (this.priceHistory?.average) {
-      const percentageBelowAverage =
-        ((this.priceHistory.average - this.productData.price) / this.priceHistory.average) * 100;
-      if (percentageBelowAverage >= 10) {
-        isGoodDeal = true;
-        dealDescription = `${percentageBelowAverage.toFixed(0)}% below 30-day average`;
-      }
-    }
-
-    return {
-      bestPrice,
-      isBestCurrentPrice,
-      isCompetitorCheckUnverified,
-      isPriceIdentical,
-      identicalStore,
-      verifiedCompetitorCount,
-      expectedCheckedStoreCount,
-      isComparisonPartial,
-      amazonPrice: this.productData.price,
-      savings: bestPriceDifference,
-      priceHistory: {
-        average: this.priceHistory?.average || null,
-        min: this.priceHistory?.range?.min || null,
-        max: this.priceHistory?.range?.max || null,
-        count: this.priceHistory?.count || 0,
-        isGoodDeal,
-        dealDescription,
-      },
-      competitors: this.competitorPrices || {},
+    
+    // Log links to console for debugging
+    console.log('TrueTag: Competitor Links:', shopLinks);
+    
+    // Show overlay with shop links and save price options
+    const uiData = {
+      title: this.productData.title,
+      amazonPrice: amazonPrice,
+      message: 'Compare prices at other retailers',
+      shopLinks: shopLinks,
     };
+
+    OverlayUI.inject(uiData);
+  }
+
+  async savePriceIfConfirmed(store, price) {
+    const confirmed = confirm(
+      `Save price for ${store}?\n\n` +
+      `Product: ${this.productData.title}\n` +
+      `Price: $${price.toFixed(2)}\n\n` +
+      `Click OK to save to database.`
+    );
+    
+    if (confirmed) {
+      try {
+        console.log(`TrueTag: Saving ${store} price $${price.toFixed(2)}`);
+        await this.supabaseClient.insertPrice({
+          modelNumber: this.productData.modelNumber,
+          store: store,
+          price: parseFloat(price),
+        });
+        console.log(`TrueTag: ✅ Saved ${store} price to database`);
+        alert(`✅ Price saved for ${store}!`);
+      } catch (error) {
+        console.error(`TrueTag: Failed to save ${store} price`, error);
+        alert(`❌ Failed to save price: ${error.message}`);
+      }
+    }
   }
 
   async logCurrentPrice() {
